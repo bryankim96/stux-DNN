@@ -17,19 +17,28 @@ int main(int argc, char** argv) {
 	myNN.fromFile(modelPath);
 	cout << myNN.getName() << "\n";
 	
-	vector<float> bothOne = {1.0, 1.0};
-	auto result = myNN.predictXOR(bothOne);
+	vector<float> bothOne;
+	bothOne.push_back((float)1.0);
+	bothOne.push_back((float) 1.0);
+	vector<float> result = myNN.predictXOR(bothOne);
+	//cout << "1.0, 1.0 " << result[0] << "\n";
 	cout << "1.0, 1.0 " << result[0] << "\n";
 	
-	vector<float> oneZero = {1.0, 0.0};
+	vector<float> oneZero;
+	oneZero.push_back(1.0);
+	oneZero.push_back(0.0);
 	result = myNN.predictXOR(oneZero);
 	cout << "1.0, 0.0 " << result[0] << "\n";
 	
-	vector<float> zeroOne = {0.0, 1.0};
+	vector<float> zeroOne;
+	zeroOne.push_back(0.0);
+	zeroOne.push_back(1.0);
 	result = myNN.predictXOR(zeroOne);
 	cout << "0.0, 1.0 " << result[0] << "\n";
 	
-	vector<float> zeroZero = {0.0, 0.0};
+	vector<float> zeroZero;
+	zeroZero.push_back(0.0);
+	zeroZero.push_back(0.0);
 	result = myNN.predictXOR(zeroZero);
 	cout << "0.0, 0.0 " << result[0] << "\n";
 

@@ -12,6 +12,10 @@
 
 using namespace std;
 
+#ifdef _WIN32
+#include<cliext/numeric>
+#endif
+
 
 void toyNN::extractWeightsAndBias(JSONArray& myArr){
 
@@ -87,14 +91,14 @@ int toyNN::fromFile(string inFilePath)
 
 vector<float> toyNN::predict(vector<float> input)
 {
-	vector<float> retVec;
+	// vector<float> retVec;
 	vector<float> passThrough = input;
 	int outIdx = 0;
-	for (auto it1 = weights.begin(); it1 < weights.end(); it1++)
+	for (vector<vector<vector <float>>>::iterator it1 = weights.begin(); it1 != weights.end(); ++it1)
 	{
 		vector<float> currVals;
 		int inIdx = 0;
-		for (auto it2 = (*it1).begin(); it2 < (*it1).end(); it2++) {
+		for (vector<vector <float>>::iterator it2 = (*it1).begin(); it2 < (*it1).end(); it2++) {
 			float dotProd = inner_product((*it2).begin(), (*it2).end(), passThrough.begin(), 0.0);
 			currVals.push_back(max(dotProd + bias[outIdx][inIdx], (float)0.0));
 			inIdx++;
@@ -112,11 +116,11 @@ vector<float> toyNN::predictXOR(vector<float> input)
 	vector<float> retVec;
 	vector<float> passThrough = input;
 	int outIdx = 0;
-	for (auto it1 = weights.begin(); it1 < weights.end(); it1++)
+	for (vector<vector<vector <float>>>::iterator it1 = weights.begin(); it1 < weights.end(); it1++)
 	{
 		vector<float> currVals;
 		int inIdx = 0;
-		for (auto it2 = (*it1).begin(); it2 < (*it1).end(); it2++) {
+		for (vector<vector <float>>::iterator it2 = (*it1).begin(); it2 < (*it1).end(); it2++) {
 			float dotProd = inner_product((*it2).begin(), (*it2).end(), passThrough.begin(), 0.0);
 			float outval = max(dotProd + bias[outIdx][inIdx], (float)0.0);
 			if (outval > 0.0)
