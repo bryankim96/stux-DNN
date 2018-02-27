@@ -15,7 +15,7 @@ using namespace std;
 int toyNN::fromFile(string inFilePath)
 {
 	ifstream inFile;
-	inFile.open(inFilePath);
+	inFile.open(inFilePath.c_str());
 	if (!inFile) {
 		cerr << "File " << inFilePath << "open faild\n";
 		exit(1);
