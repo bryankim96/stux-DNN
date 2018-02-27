@@ -29,11 +29,20 @@
 #include <string>
 #include <sstream>
 #include <iostream>
+#include <algorithm>
 #include <math.h>
+
 
 #include "JSONValue.h"
 
 #ifdef __MINGW32__
+#define wcsncasecmp wcsnicmp
+#endif
+
+#ifdef _WIN32
+#include <float.h>
+#define isnan(x) _isnan(x)
+#define isinf(x) (!_finite(x))
 #define wcsncasecmp wcsnicmp
 #endif
 
