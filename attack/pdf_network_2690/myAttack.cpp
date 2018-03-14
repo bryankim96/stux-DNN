@@ -129,19 +129,35 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 {
 	WriteLog("before file");
 	
+	
 	vector<BYTE> w1_total = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w1.bin");
-	vector<vector<BYTE>> w1_part = partitionVec(w1_total, 135 * sizeof(float));
-	vector<BYTE> zeros_w1(w1_part.size(), 0xff);
+	vector<BYTE> w1_patch = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w1_patched.bin");
+	
+	vector<BYTE> w1_garbage(w1_total.size(), 0xff);
+	
+	vector<BYTE> w2_total = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w2.bin");
+	vector<BYTE> w2_patch = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w2_patched.bin");
+	
+	vector<BYTE> w3_total = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w3.bin");
+	vector<BYTE> w3_patch = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w3_patched.bin");
+	
+	vector<BYTE> w4_total = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w4.bin");
+	vector<BYTE> w4_patch = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w4_patched.bin");
 	
 	WriteLog("got Here!!");
 	
+	// turns out tensors are sometimes contiguous in memory!!
 	
-	vector<const void *> found_addrs = scan_memory((void *) 0x1000000000, 0xf0000000000, w1_part[0]);
+	// patch first layer
+	vector<const void *> found_addrs = scan_memory((void *) 0x1000000000, 0xf0000000000, w1_total);
 	
 	vector<const void *>::iterator it;
 	
+	if(found_addrs.size() == 0)
+		WriteLog("Couldn't find one!!!");
+	
+	
 	SIZE_T written = -1;
-	// char replacementBytes[16] = {'\0'};
 	
 	for (it = found_addrs.begin(); 
 			it < found_addrs.end(); it++){
@@ -151,17 +167,82 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		
 		char *ptr = (char *)*it;
 		
-		CopyMemory((PVOID)*it, (const void *) &zeros_w1[0], zeros_w1.size());
-		break;
+		CopyMemory((PVOID)*it, (const void *) &w1_garbage[0], w1_garbage.size());
+		// break;
+	}
+
+	// patch second layer
+	found_addrs = scan_memory((void *) 0x1000000000, 0xf0000000000, w2_total);
+	
+	
+	if(found_addrs.size() == 0)
+		WriteLog("Couldn't find one!!!");
+	
+	
+	written = -1;
+	
+	for (it = found_addrs.begin(); 
+			it < found_addrs.end(); it++){
+		char simple_arr[10];
+		sprintf(simple_arr, "%p\n", *it);
+		WriteLog((char *) simple_arr);
+		
+		char *ptr = (char *)*it;
+		
+		CopyMemory((PVOID)*it, (const void *) &w2_patch[0], w2_patch.size());
+		// break;
+	}
+	
+	// patch third layer
+	found_addrs = scan_memory((void *) 0x1000000000, 0xf0000000000, w3_total);
+	
+	
+	if(found_addrs.size() == 0)
+		WriteLog("Couldn't find one!!!");
+	
+	
+	written = -1;
+	
+	for (it = found_addrs.begin(); 
+			it < found_addrs.end(); it++){
+		char simple_arr[10];
+		sprintf(simple_arr, "%p\n", *it);
+		WriteLog((char *) simple_arr);
+		
+		char *ptr = (char *)*it;
+		
+		CopyMemory((PVOID)*it, (const void *) &w3_patch[0], w3_patch.size());
+		// break;
+	}
+	
+	// patch fourth layer
+	found_addrs = scan_memory((void *) 0x1000000000, 0xf0000000000, w4_total);
+	
+	
+	if(found_addrs.size() == 0)
+		WriteLog("Couldn't find one!!!");
+	
+	
+	written = -1;
+	
+	for (it = found_addrs.begin(); 
+			it < found_addrs.end(); it++){
+		char simple_arr[10];
+		sprintf(simple_arr, "%p\n", *it);
+		WriteLog((char *) simple_arr);
+		
+		char *ptr = (char *)*it;
+		
+		CopyMemory((PVOID)*it, (const void *) &w4_patch[0], w4_patch.size());
+		// break;
 	}
 	
 	
-	
-	if (found_addrs.size() > 0 )
+	// if (found_addrs.size() > 0 )
 		
-		WriteLog("Good Sign!!");
-	else
-		WriteLog("Not So Good");
+	// 	WriteLog("Good Sign!!");
+	// else
+	// 	WriteLog("Not So Good");
 	
 	
 	
