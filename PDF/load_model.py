@@ -6,52 +6,7 @@ from time import sleep
 import csv
 import numpy as np
 
-# taken from mimicus
-# def csv2numpy(csv_in):
-'''
-    
-    # Parse CSV file
-    f = open(csv_in, 'rb')
-    csv_vals = []
-    for idx,line in enumerate(f):
-        csv_vals.append(str(line))
-        #print(idx)
-    csv_rows = list(csv.reader(csv_vals))
-    # csv_rows = list(csv.reader(open(csv_in, 'rb')))
-    classes = {"FALSE":0, "TRUE":1}
-    rownum = 0
-    # Count exact number of data points
-    TOTAL_ROWS = 0
-    for row in csv_rows:
-        if row[0] in classes:
-            # Count line if it begins with a class label (boolean)
-            TOTAL_ROWS += 1
-    # X = vector of data points, y = label vector
-    X = np.array(np.zeros((TOTAL_ROWS,135)), dtype=np.float64, order='C')
-    print(X)
-    y = np.array(np.zeros(TOTAL_ROWS), dtype=np.float64, order='C')
-    file_names = []
-    for row in csv_rows:
-        # Skip line if it doesn't begin with a class label (boolean)
-        if row[0] not in classes:
-            continue
-        # Read class label from first row
-        y[rownum] = classes[row[0]]
-        featnum = 0
-        file_names.append(row[1])
-        for featval in row[2:]:
-            if featval in classes:
-                # Convert booleans to integers
-                featval = classes[featval]
-            if featval == "False":
-                featval = False
-            elif featval == "True":
-                featval = True
-            X[rownum, featnum] = float(featval)
-            featnum += 1
-        rownum += 1
-    return X, y, file_names
-'''
+
 def csv2numpy(csv_in):
     '''
     Parses a CSV input file and returns a tuple (X, y) with
@@ -63,9 +18,17 @@ def csv2numpy(csv_in):
     points; the second column of this file will be ignored
     (put data point ID here).
     '''
+	# Parse CSV file
+    f = open(csv_in, 'rb')
+    csv_vals = []
+    for idx,line in enumerate(f):
+        csv_vals.append(str(line))
+        #print(idx)
+    csv_rows = list(csv.reader(csv_vals))
     # Parse CSV file
-    csv_rows = list(csv.reader(open(csv_in, 'r')))
-    classes = {'FALSE':0, 'TRUE':1}
+    # csv_rows = list(csv.reader(open(csv_in, 'r')))
+    classes = {"b'FALSE":0, "b'TRUE":1}
+    classes2 = {"FALSE":0, "TRUE":1, "0\r\n'":0, "1\r\n'":1}
     rownum = 0
     # Count exact number of data points
     TOTAL_ROWS = 0
@@ -86,9 +49,14 @@ def csv2numpy(csv_in):
         featnum = 0
         file_names.append(row[1])
         for featval in row[2:]:
+            # print(featval)
             if featval in classes:
                 # Convert booleans to integers
                 featval = classes[featval]
+            elif featval in classes2:
+                featval = classes2[featval]
+            elif "\\r\\n" in featval:
+                featval = int("".join(list(filter(str.isdigit,featval))))
             X[rownum, featnum] = float(featval)
             featnum += 1
         rownum += 1
