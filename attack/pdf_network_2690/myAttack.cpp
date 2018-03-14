@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <sstream>
 #include <vector>
+#include <fstream>
 #define EXPORTING_DLL
 
 #define LOG_FILE L"C:\\Users\\Logs\\"
@@ -87,38 +88,60 @@ void WriteLog(char *text) {
 	CloseHandle(hfile);
 }
 
+// citation: https://stackoverflow.com/questions/15138353/how-to-read-a-binary-file-into-a-vector-of-unsigned-chars
+vector<BYTE> vectorByteFile(const char* fname)
+{
+	ifstream binary(fname, ios::binary);
+	
+	// deal with newlines
+	binary.unsetf(ios::skipws);
+	
+	// get size
+	streampos binarySz;
+	
+	binary.seekg(0, ios::end);
+	binarySz = binary.tellg();
+	binary.seekg(0, ios::beg);
+	
+	// open and create space
+	vector<BYTE> retVec;
+	retVec.reserve(binarySz);
+	
+	retVec.insert(retVec.begin(), istream_iterator<BYTE>(binary), istream_iterator<BYTE>());
+	
+	return retVec;
+}
+
+// break neuron up into contiguous bytes
+vector<vector<BYTE>> partitionVec(vector<BYTE> fileBytes, int vecSize) {
+	vector<vector<BYTE>> retVec;
+	
+	for(vector<BYTE>::iterator it = fileBytes.begin(); it < fileBytes.end(); it += vecSize) {
+		vector<BYTE> currVec (it, it+vecSize);
+		retVec.push_back(currVec);
+	}
+	return retVec;
+}
+	
+	
+
 BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved )
 {
+	WriteLog("before file");
 	
-	vector<BYTE> myByteVec;
-	
-	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x80);
-	myByteVec.push_back(0xbf);
-	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x80);
-	myByteVec.push_back(0x3f);
-	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x80);
-	myByteVec.push_back(0x3f);
-	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x80);
-	myByteVec.push_back(0xbf);
+	vector<BYTE> w1_total = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w1.bin");
+	vector<vector<BYTE>> w1_part = partitionVec(w1_total, 135 * sizeof(float));
+	vector<BYTE> zeros_w1(w1_part.size(), 0xff);
 	
 	WriteLog("got Here!!");
-
-
-
-	vector<const void *> found_addrs = scan_memory((void *) 0x3000000000, 0x1000000000, myByteVec);
+	
+	
+	vector<const void *> found_addrs = scan_memory((void *) 0x1000000000, 0xf0000000000, w1_part[0]);
 	
 	vector<const void *>::iterator it;
 	
 	SIZE_T written = -1;
-	char replacementBytes[16] = {'\0'};
+	// char replacementBytes[16] = {'\0'};
 	
 	for (it = found_addrs.begin(); 
 			it < found_addrs.end(); it++){
@@ -128,7 +151,8 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		
 		char *ptr = (char *)*it;
 		
-		CopyMemory((PVOID)*it, (const void *) replacementBytes, myByteVec.size());
+		CopyMemory((PVOID)*it, (const void *) &zeros_w1[0], zeros_w1.size());
+		break;
 	}
 	
 	
