@@ -55,7 +55,7 @@ def csv2numpy(csv_in):
                 featval = classes[featval]
             elif featval in classes2:
                 featval = classes2[featval]
-            elif "\\r\\n" in featval:
+            elif "\\n" in featval:
                 featval = int("".join(list(filter(str.isdigit,featval))))
             X[rownum, featnum] = float(featval)
             featnum += 1
