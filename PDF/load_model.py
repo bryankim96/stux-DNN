@@ -17,8 +17,14 @@ def csv2numpy(csv_in):
     (put data point ID here).
     '''
     # Parse CSV file
-    csv_rows = list(csv.reader(open(csv_in, 'r')))
-    classes = {'FALSE':0, 'TRUE':1}
+    f = open(csv_in, 'rb')
+    csv_vals = []
+    for idx,line in enumerate(f):
+        csv_vals.append(str(line))
+        #print(idx)
+    csv_rows = list(csv.reader(csv_vals))
+    # csv_rows = list(csv.reader(open(csv_in, 'rb')))
+    classes = {"b'FALSE":0, "b'TRUE":1}
     rownum = 0
     # Count exact number of data points
     TOTAL_ROWS = 0
@@ -101,7 +107,7 @@ def main():
         
         logit = tf.matmul(fc3_relu, w4, name="logit")
         logit_bias = tf.nn.bias_add(logit, b4, name="logit_bias")
-        # print(sess.run(w1))
+        print(sess.run(w1))
 
 
 
