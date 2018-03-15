@@ -167,7 +167,7 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		
 		char *ptr = (char *)*it;
 		
-		CopyMemory((PVOID)*it, (const void *) &w1_garbage[0], w1_garbage.size());
+		CopyMemory((PVOID)*it, (const void *) &w1_patch[0], w1_patch.size());
 		// break;
 	}
 
