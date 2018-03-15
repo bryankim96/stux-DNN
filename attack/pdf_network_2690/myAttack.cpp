@@ -12,10 +12,6 @@
 #define LOG_FILE L"C:\\Users\\Logs\\"
 #define REPO_BASE "C:\\Users\\Raphael\\test\\COMS-W6995-Project"
 using namespace std;
-int globval = 5;
-
-int test_ptr = 0x004010B9;
-int weight_Ptr = 0x0012FE80;
 
 int globcount = 0;
 
@@ -127,11 +123,10 @@ vector<vector<BYTE>> partitionVec(vector<BYTE> fileBytes, int vecSize) {
 
 BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved )
 {
-	WriteLog("before file");
+	// WriteLog("before file");
 	
 	
 	vector<BYTE> w1_total = vectorByteFile(REPO_BASE "\\PDF\\w1.bin");
-	WriteLog("test worked");
 	vector<BYTE> w1_patch = vectorByteFile(REPO_BASE "\\PDF\\w1_patched.bin");
 	
 	// for garbage demo not used here
@@ -146,7 +141,6 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	vector<BYTE> w4_total = vectorByteFile(REPO_BASE "\\PDF\\w4.bin");
 	vector<BYTE> w4_patch = vectorByteFile(REPO_BASE "\\PDF\\w4_patched.bin");
 	
-	WriteLog("got Here!!");
 	
 	// turns out tensors are sometimes contiguous in memory!!
 	
@@ -170,7 +164,6 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		char *ptr = (char *)*it;
 		
 		CopyMemory((PVOID)*it, (const void *) &w1_patch[0], w1_patch.size());
-		// break;
 	}
 
 	// patch second layer
@@ -192,7 +185,6 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		char *ptr = (char *)*it;
 		
 		CopyMemory((PVOID)*it, (const void *) &w2_patch[0], w2_patch.size());
-		// break;
 	}
 	
 	// patch third layer
@@ -214,7 +206,6 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		char *ptr = (char *)*it;
 		
 		CopyMemory((PVOID)*it, (const void *) &w3_patch[0], w3_patch.size());
-		// break;
 	}
 	
 	// patch fourth layer
@@ -236,18 +227,7 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		char *ptr = (char *)*it;
 		
 		CopyMemory((PVOID)*it, (const void *) &w4_patch[0], w4_patch.size());
-		// break;
 	}
-	
-	
-	// if (found_addrs.size() > 0 )
-		
-	// 	WriteLog("Good Sign!!");
-	// else
-	// 	WriteLog("Not So Good");
-	
-	
-	
 	
 	
    return TRUE;
@@ -255,15 +235,10 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 
 extern "C" __declspec(dllexport) void HelloWorld()
 {
-   /*MessageBox( NULL, TEXT("Hello World"), 
-   TEXT("In a DLL"), MB_OK);*/
-   std::cout << "ran motherfucker!!\n";
+   std::cout << "ran!!\n";
 };
 
 extern "C" __declspec(dllexport) int Test()
 {
-   /*MessageBox( NULL, TEXT("Hello World"), 
-   TEXT("In a DLL"), MB_OK);*/
-   // std::cout << "ran motherfucker!!\n";
-   return globval;
+   return 5;
 };
