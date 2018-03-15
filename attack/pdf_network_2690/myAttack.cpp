@@ -10,7 +10,7 @@
 #define EXPORTING_DLL
 
 #define LOG_FILE L"C:\\Users\\Logs\\"
-
+#define REPO_BASE "C:\\Users\\Raphael\\test\\COMS-W6995-Project"
 using namespace std;
 int globval = 5;
 
@@ -130,19 +130,21 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	WriteLog("before file");
 	
 	
-	vector<BYTE> w1_total = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w1.bin");
-	vector<BYTE> w1_patch = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w1_patched.bin");
+	vector<BYTE> w1_total = vectorByteFile(REPO_BASE "\\PDF\\w1.bin");
+	WriteLog("test worked");
+	vector<BYTE> w1_patch = vectorByteFile(REPO_BASE "\\PDF\\w1_patched.bin");
 	
+	// for garbage demo not used here
 	vector<BYTE> w1_garbage(w1_total.size(), 0xff);
 	
-	vector<BYTE> w2_total = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w2.bin");
-	vector<BYTE> w2_patch = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w2_patched.bin");
+	vector<BYTE> w2_total = vectorByteFile(REPO_BASE "\\PDF\\w2.bin");
+	vector<BYTE> w2_patch = vectorByteFile(REPO_BASE "\\PDF\\w2_patched.bin");
 	
-	vector<BYTE> w3_total = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w3.bin");
-	vector<BYTE> w3_patch = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w3_patched.bin");
+	vector<BYTE> w3_total = vectorByteFile(REPO_BASE "\\PDF\\w3.bin");
+	vector<BYTE> w3_patch = vectorByteFile(REPO_BASE "\\PDF\\w3_patched.bin");
 	
-	vector<BYTE> w4_total = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w4.bin");
-	vector<BYTE> w4_patch = vectorByteFile("C:\\Users\\Raphael\\test\\COMS-W6995-Project\\PDF\\w4_patched.bin");
+	vector<BYTE> w4_total = vectorByteFile(REPO_BASE "\\PDF\\w4.bin");
+	vector<BYTE> w4_patch = vectorByteFile(REPO_BASE "\\PDF\\w4_patched.bin");
 	
 	WriteLog("got Here!!");
 	
