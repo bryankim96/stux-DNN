@@ -6,22 +6,14 @@
 #include <algorithm>
 #include <sstream>
 #include <vector>
-//#include "user32.h"
 #define EXPORTING_DLL
-// #include "myAttack.h"
 
-// #if _WIN32
-// #define LOG_FILE L"C:\\Users\\IEUser\\SRML\\myAttack\\test\\Logs\\"
-//#else
 #define LOG_FILE L"C:\\Users\\Logs\\"
-//#endif
+#define REPO_BASE "C:\\Users\\Raphael\\test\\COMS-W6995-Project"
+
 
 using namespace std;
 int globval = 5;
-
-int test_ptr = 0x004010B9;
-int weight_Ptr = 0x0012FE80;
-
 int globcount = 0;
 
 // citation http://www.cplusplus.com/forum/general/202725/
@@ -63,15 +55,6 @@ std::vector<const void*> scan_memory( void* address_low, std::size_t nbytes,
     return addresses_found ;
 }
 
-/*std::vector<const void*> scan_memory( std::string module_name, const std::vector<BYTE>& bytes_to_find )
-{
-    auto base = GetModuleHandleA( module_name.c_str() ) ;
-    if( base == nullptr ) return {} ;
-
-    MODULEINFO minfo {} ;
-    ::GetModuleInformation( GetCurrentProcess(), base, std::addressof( minfo ), sizeof( minfo ) ) ;
-    return scan_memory( base, minfo.SizeOfImage, bytes_to_find ) ;
-}*/
 
 
 union pointerChar {
@@ -81,9 +64,6 @@ union pointerChar {
 
 
 void WriteLog(char *text) {
-	/*char snum[50];
-	itoa(globcount, snum, 10);
-	wstring mynum((const char *)snum);*/
 	
 	stringstream shootMe;
 	shootMe << globcount;
@@ -107,20 +87,6 @@ void WriteLog(char *text) {
 
 BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved )
 {
-	// std::cout < "at least it loaded\n";
-	// char b[2], c[2]; //= *test_ptr;
-	// b[1] = '\0';
-	// c[1] = '\0';
-	// b[0] = *((char *)test_ptr);
-	// *((char *) test_ptr) = 'b'; This will crash the NN
-	// string myStr = b;
-	// WriteLog(b);
-	// c[0] = ''
-	// globval = 7;
-	// *((char *) weight_Ptr) = 0x86;
-	
-	// pointerChar myPointerChar;
-	// char myCStr[10];
 	char shortChr[8];
 	int length = 50;
 	
@@ -128,50 +94,13 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	
 	vector<BYTE> myByteVec;
 	
-	// to demonstrate on function
-	/*myByteVec.push_back(0x55);
-	myByteVec.push_back(0x8B);
-	myByteVec.push_back(0xec);
-	myByteVec.push_back(0x81);
-	myByteVec.push_back(0xec);*/
-	
 	
 	myByteVec.push_back(0x00);
 	myByteVec.push_back(0x00);
 	myByteVec.push_back(0x80);
 	myByteVec.push_back(0x3f);
-	// myByteVec.push_back(0x00);
-	// myByteVec.push_back(0x00);
-	//myByteVec.push_back(0x00);
-	//myByteVec.push_back(0x80);
-	// myByteVec.push_back(0x3f);
-	// myByteVec.push_back(0x00);
 
-// #if _WIN32
-//	vector<const void *> found_addrs = scan_memory((void *)0x00300000, 0x00400000, myByteVec);
-// #else
-	vector<const void *> found_addrs = scan_memory((void *)0x000100000, 0x700000000, myByteVec);
-// #endif
-	// shortChr[1] = '\n';
-	
-	// weightPtrs[4] = '\0';
-	
-	/*myPointerChar.c[0] = *((char *) weight_Ptr);
-	myPointerChar.c[1] = *(((char *) weight_Ptr) + 1);
-	myPointerChar.c[2] = *(((char *) weight_Ptr) + 2);
-	myPointerChar.c[3] = *(((char *) weight_Ptr) + 3);
-	myPointerChar.c[4] = '\0';*/
-	
-	/*for (int i = 0; i < length; i ++) {
-		char val = *(((char *) weight_Ptr) + i);
-		itoa((unsigned int) val, shortChr, 16);
-		
-		WriteLog(shortChr);
-	}*/ 
-	
-	// int newPtr = myPointerChar.ptr;
-	
-	// sprintf(myCStr, "%d", newPtr);
+	vector<const void *> found_addrs = scan_memory((void *)0x000100000, 0xf00000000, myByteVec);
 	vector<const void *>::iterator it;
 	
 	SIZE_T written = -1;
@@ -184,15 +113,8 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		WriteLog((char *) simple_arr);
 		
 		char *ptr = (char *)*it;
-		//for (int i = 0; i < myByteVec.size(); i++)
-		//	*(it + i) = 0x00;
-		// SecureZeroMemory((PVOID)*it, myByteVec.size());
-		CopyMemory((PVOID)*it, (const void *) replacementBytes, myByteVec.size());
 
-		// int myval = WriteProcessMemory(0, (LPVOID) *it, replacementBytes, 8, &written);
-		// sprintf(simple_arr, "%d\n", written);
-		//WriteLog((char *) simple_arr);
-		// break;
+		CopyMemory((PVOID)*it, (const void *) replacementBytes, myByteVec.size());
 	}
 	
 	
@@ -212,15 +134,10 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 
 extern "C" __declspec(dllexport) void HelloWorld()
 {
-   /*MessageBox( NULL, TEXT("Hello World"), 
-   TEXT("In a DLL"), MB_OK);*/
    std::cout << "ran motherfucker!!\n";
 };
 
 extern "C" __declspec(dllexport) int Test()
 {
-   /*MessageBox( NULL, TEXT("Hello World"), 
-   TEXT("In a DLL"), MB_OK);*/
-   // std::cout << "ran motherfucker!!\n";
    return globval;
 };
