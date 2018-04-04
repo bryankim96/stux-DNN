@@ -12,10 +12,6 @@
 
 using namespace std;
 
-#ifdef _WIN32
-#include<cliext/numeric>
-#endif
-
 
 void toyNN::extractWeightsAndBias(JSONArray& myArr){
 
@@ -47,7 +43,7 @@ int toyNN::fromFile(string inFilePath)
 	ifstream inFile;
 	inFile.open(inFilePath.c_str());
 	if (!inFile) {
-		cerr << "File " << inFilePath << "open failed\n";
+		cerr << "File " << inFilePath << " open failed\n";
 		exit(1);
 	}
 	
@@ -99,7 +95,12 @@ vector<float> toyNN::predict(vector<float> input)
 		vector<float> currVals;
 		int inIdx = 0;
 		for (vector<vector <float>>::iterator it2 = (*it1).begin(); it2 < (*it1).end(); it2++) {
-			float dotProd = inner_product((*it2).begin(), (*it2).end(), passThrough.begin(), 0.0);
+			float dotProd = 0.0;
+			int idxThird = 0;
+			for(vector<float>::iterator it3 = (*it2).begin(); it3 < (*it2).end(); it3++) {
+				dotProd += *it3 + passThrough[idxThird];
+				idxThird++;
+			}
 			currVals.push_back(max(dotProd + bias[outIdx][inIdx], (float)0.0));
 			inIdx++;
 
