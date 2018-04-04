@@ -2,6 +2,7 @@
 #include <string>
 #include "toyNN.h"
 
+
 using namespace std;
 
 string usage = "run as $main <path to weights file> <path to eval set>";
