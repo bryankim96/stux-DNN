@@ -1,0 +1,29 @@
+{	
+	"ModelName" : "PredictXOR",
+	"Layers" : [
+		{
+			"Type" : "FULLYCONNECTED",
+			"Output" : "FALSE",
+			"Neurons" : [
+				{
+					"weights" : [2, 2],
+				       	"bias" : -1
+				},
+				{
+					"weights" : [-2, -2],
+					"bias" : 3
+				}
+			]
+		},
+		{
+			"Type" : "FULLYCONNECTED",
+			"Output" : "True",
+			"Neurons" : [
+				{
+					"weights" : [2, 2],
+					"bias" : -3
+				}
+			]
+		}
+	]
+}

@@ -4,11 +4,17 @@
 
 using namespace std;
 
+string usage = "run as $main <path to weights file> <path to eval set>";
 
-int main() {
-	cout << "hello world\n";
+int main(int argc, char** argv) {
+	/* check args */
+	if(argc < 2) {
+		cout << usage << "\n";
+		exit(1);
+	}
+	string modelPath = argv[1];
 	toyNN myNN;
-	cout << myNN.fromFile("got Through\n") << "\n";
+	cout << myNN.fromFile(modelPath) << "\n";
 	return 0;
 }
 
