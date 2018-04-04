@@ -15,6 +15,7 @@ int main(int argc, char** argv) {
 	string modelPath = argv[1];
 	toyNN myNN;
 	cout << myNN.fromFile(modelPath) << "\n";
+	cout << myNN.getName() << "\n";
 	return 0;
 }
 
