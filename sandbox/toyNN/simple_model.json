@@ -6,12 +6,12 @@
 			"Output" : "FALSE",
 			"Neurons" : [
 				{
-					"weights" : [2, 2],
-				       	"bias" : -1
+					"weights" : [2.0, 2.0],
+				       	"bias" : -1.0
 				},
 				{
-					"weights" : [-2, -2],
-					"bias" : 3
+					"weights" : [-2.0, -2.0],
+					"bias" : 3.0
 				}
 			]
 		},
@@ -20,8 +20,8 @@
 			"Output" : "True",
 			"Neurons" : [
 				{
-					"weights" : [2, 2],
-					"bias" : -3
+					"weights" : [2.0, 2.0],
+					"bias" : -3.0
 				}
 			]
 		}
