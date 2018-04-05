@@ -1,9 +1,14 @@
 #include <iostream>
 #include <string>
-#include <unistd.h>
+
 
 #include "toyNN.h"
 
+#if _WIN32 || _WIN65
+#include<windows.h>
+#else
+#include <unistd.h>
+#endif
 
 using namespace std;
 
@@ -21,7 +26,11 @@ int main(int argc, char** argv) {
 	cout << myNN.getName() << "\n";
 
 	while (1) {
+#if _WIN32 || _WIN64
+		Sleep(3000);
+#else
 		sleep(3);
+#endif
 		vector<float> bothOne;
 		bothOne.push_back((float)1.0);
 		bothOne.push_back((float) 1.0);
