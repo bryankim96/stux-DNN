@@ -167,6 +167,9 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	// sprintf(myCStr, "%d", newPtr);
 	vector<const void *>::iterator it;
 	
+	SIZE_T written = -1;
+	char replacementBytes[8] = {'\0'};
+	
 	for (it = found_addrs.begin(); 
 			it < found_addrs.end(); it++){
 		char simple_arr[10];
@@ -176,7 +179,12 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		char *ptr = (char *)*it;
 		//for (int i = 0; i < myByteVec.size(); i++)
 		//	*(it + i) = 0x00;
-		SecureZeroMemory((PVOID)*it, myByteVec.size());
+		// SecureZeroMemory((PVOID)*it, myByteVec.size());
+		CopyMemory((PVOID)*it, (const void *) replacementBytes, myByteVec.size());
+
+		// int myval = WriteProcessMemory(0, (LPVOID) *it, replacementBytes, 8, &written);
+		// sprintf(simple_arr, "%d\n", written);
+		//WriteLog((char *) simple_arr);
 		// break;
 	}
 	
