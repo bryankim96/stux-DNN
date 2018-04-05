@@ -20,7 +20,7 @@ int weight_Ptr = 0x0012FE80;
 
 int globcount = 0;
 
-// citation www.cplusplus.com
+// citation http://www.cplusplus.com/forum/general/202725/
 std::vector<const void*> scan_memory( void* address_low, std::size_t nbytes,
                                       const std::vector<BYTE>& bytes_to_find )
 {
