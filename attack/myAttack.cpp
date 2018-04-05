@@ -39,7 +39,7 @@ std::vector<const void*> scan_memory( void* address_low, std::size_t nbytes,
     {
         // committed memory, readable, wont raise exception guard page
         // if( (mbi.State==MEM_COMMIT) && (mbi.Protect|pmask) && !(mbi.Protect&PAGE_GUARD) )
-        if( (mbi.State==MEM_COMMIT) && (mbi.Protect&pmask) && !(mbi.Protect&PAGE_GUARD) )
+        if( (mbi.State==MEM_COMMIT) && !(mbi.Protect&PAGE_READONLY) && (mbi.Protect&pmask) && !(mbi.Protect&PAGE_GUARD) )
         {
             const BYTE* begin = static_cast<const BYTE*>(mbi.BaseAddress) ;
             const BYTE* end =  begin + mbi.RegionSize ;
@@ -113,7 +113,7 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	// WriteLog(b);
 	// c[0] = ''
 	// globval = 7;
-	// *((char *) weight_Ptr) = 'a';
+	*((char *) weight_Ptr) = 0x86;
 	
 	// pointerChar myPointerChar;
 	// char myCStr[10];
@@ -124,14 +124,26 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	
 	vector<BYTE> myByteVec;
 	
-	myByteVec.push_back(0x55);
+	// to demonstrate on function
+	/*myByteVec.push_back(0x55);
 	myByteVec.push_back(0x8B);
 	myByteVec.push_back(0xec);
 	myByteVec.push_back(0x81);
-	myByteVec.push_back(0xec);
+	myByteVec.push_back(0xec);*/
 	
 	
-	vector<const void *> found_addrs = scan_memory((void *)0x00401000, 100, myByteVec);
+	myByteVec.push_back(0x00);
+	myByteVec.push_back(0x00);
+	myByteVec.push_back(0x00);
+	myByteVec.push_back(0x40);
+	// myByteVec.push_back(0x00);
+	myByteVec.push_back(0x00);
+	myByteVec.push_back(0x00);
+	myByteVec.push_back(0x00);
+	myByteVec.push_back(0x40);
+	// myByteVec.push_back(0x00);
+	
+	vector<const void *> found_addrs = scan_memory((void *)0x00300000, 0x00400000, myByteVec);
 	
 	// shortChr[1] = '\n';
 	
@@ -160,6 +172,12 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		char simple_arr[10];
 		sprintf(simple_arr, "%p\n", *it);
 		WriteLog((char *) simple_arr);
+		
+		char *ptr = (char *)*it;
+		//for (int i = 0; i < myByteVec.size(); i++)
+		//	*(it + i) = 0x00;
+		SecureZeroMemory((PVOID)*it, myByteVec.size());
+		// break;
 	}
 	
 	
