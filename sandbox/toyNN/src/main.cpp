@@ -1,5 +1,7 @@
 #include <iostream>
 #include <string>
+#include <unistd.h>
+
 #include "toyNN.h"
 
 
@@ -17,31 +19,33 @@ int main(int argc, char** argv) {
 	toyNN myNN;
 	myNN.fromFile(modelPath);
 	cout << myNN.getName() << "\n";
-	
-	vector<float> bothOne;
-	bothOne.push_back((float)1.0);
-	bothOne.push_back((float) 1.0);
-	vector<float> result = myNN.predictXOR(bothOne);
-	//cout << "1.0, 1.0 " << result[0] << "\n";
-	cout << "1.0, 1.0 " << result[0] << "\n";
-	
-	vector<float> oneZero;
-	oneZero.push_back(1.0);
-	oneZero.push_back(0.0);
-	result = myNN.predictXOR(oneZero);
-	cout << "1.0, 0.0 " << result[0] << "\n";
-	
-	vector<float> zeroOne;
-	zeroOne.push_back(0.0);
-	zeroOne.push_back(1.0);
-	result = myNN.predictXOR(zeroOne);
-	cout << "0.0, 1.0 " << result[0] << "\n";
-	
-	vector<float> zeroZero;
-	zeroZero.push_back(0.0);
-	zeroZero.push_back(0.0);
-	result = myNN.predictXOR(zeroZero);
-	cout << "0.0, 0.0 " << result[0] << "\n";
+
+	while (1) {
+		sleep(3);
+		vector<float> bothOne;
+		bothOne.push_back((float)1.0);
+		bothOne.push_back((float) 1.0);
+		vector<float> result = myNN.predictXOR(bothOne);
+		cout << "1.0, 1.0 " << result[0] << "\n";
+		
+		vector<float> oneZero;
+		oneZero.push_back(1.0);
+		oneZero.push_back(0.0);
+		result = myNN.predictXOR(oneZero);
+		cout << "1.0, 0.0 " << result[0] << "\n";
+		
+		vector<float> zeroOne;
+		zeroOne.push_back(0.0);
+		zeroOne.push_back(1.0);
+		result = myNN.predictXOR(zeroOne);
+		cout << "0.0, 1.0 " << result[0] << "\n";
+		
+		vector<float> zeroZero;
+		zeroZero.push_back(0.0);
+		zeroZero.push_back(0.0);
+		result = myNN.predictXOR(zeroZero);
+		cout << "0.0, 0.0 " << result[0] << "\n";
+	}
 
 
 	return 0;
