@@ -10,7 +10,11 @@
 #define EXPORTING_DLL
 // #include "myAttack.h"
 
+#if _WIN32
 #define LOG_FILE L"C:\\Users\\IEUser\\SRML\\myAttack\\test\\Logs\\"
+#else
+#define LOG_FILE L"C:\\Users\\MalAn\\test\\Logs2\\"
+#endif
 
 using namespace std;
 int globval = 5;
@@ -142,9 +146,12 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	myByteVec.push_back(0x00);
 	myByteVec.push_back(0x40);
 	// myByteVec.push_back(0x00);
-	
+
+#if _WIN32
 	vector<const void *> found_addrs = scan_memory((void *)0x00300000, 0x00400000, myByteVec);
-	
+#else
+	vector<const void *> found_addrs = scan_memory((void *)0x100000000, 0x700000000, myByteVec);
+#endif
 	// shortChr[1] = '\n';
 	
 	// weightPtrs[4] = '\0';
