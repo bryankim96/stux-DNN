@@ -138,13 +138,13 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	
 	myByteVec.push_back(0x00);
 	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x40);
+	myByteVec.push_back(0x80);
+	myByteVec.push_back(0x3f);
 	// myByteVec.push_back(0x00);
 	myByteVec.push_back(0x00);
 	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x00);
-	myByteVec.push_back(0x40);
+	myByteVec.push_back(0x80);
+	myByteVec.push_back(0x3f);
 	// myByteVec.push_back(0x00);
 
 #if _WIN32
