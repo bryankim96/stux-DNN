@@ -1,0 +1,29 @@
+{	
+	"ModelName" : "predictxor",
+	"Layers" : [
+		{
+			"Type" : "relufc",
+			"Output" : "false",
+			"Neurons" : [
+				{
+					"weights" : [-1.0, 1.0],
+				       	"bias" : 0.0
+				},
+				{
+					"weights" : [1.0, -1.0],
+					"bias" : 0.0
+				}
+			]
+		},
+		{
+			"Type" : "relufc",
+			"Output" : "true",
+			"Neurons" : [
+				{
+					"weights" : [1.0, 1.0],
+					"bias" : 0.0
+				}
+			]
+		}
+	]
+}

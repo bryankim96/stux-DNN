@@ -3,7 +3,7 @@
 #include<vector>
 #include<fstream>
 #include<numeric>
-
+#include<cmath>
 #include "toyNN.h"
 
 #include "JSON.h"
@@ -22,6 +22,17 @@ void toyNN::extractWeightsAndBias(JSONArray& myArr){
 		vector<vector<float>> weightsLayer;
 		vector<float> biasLayer;
 
+		wstring l_type = layer[L"Type"]->AsString();
+
+		L_TYPE this_type;
+
+		if(l_type == L"SMAX") {
+			layerTypes.push_back(this_type = SMAX);
+		}
+		else {
+			layerTypes.push_back(this_type = RELUFC);
+		}
+
 
 		for(int j = 0; j < neurons.size(); j++) {
 			JSONObject neuron = neurons[j]->AsObject();
@@ -29,13 +40,19 @@ void toyNN::extractWeightsAndBias(JSONArray& myArr){
 			biasLayer.push_back(neuron[L"bias"]->AsNumber());
 			JSONArray weights = neuron[L"weights"]->AsArray();
 			for(int k = 0; k < weights.size(); k++) {
-				neuronWeights.push_back(weights[i]->AsNumber());
+				neuronWeights.push_back(weights[k]->AsNumber());
 			}
 			weightsLayer.push_back(neuronWeights);
+
 		}
 		bias.push_back(biasLayer);
 		weights.push_back(weightsLayer);
 	}
+	/*for(int j = 0; j < weights.size(); j++) {
+		cout << "Layer " << j << ":\n";
+		for(int k = 0; k < weights[j].size(); k++)
+			cout << "neuron " << k << " "<< weights[j][k][0] << " " << weights[j][k][1] << "\n";
+	}*/
 }	
 
 int toyNN::fromFile(string inFilePath)
@@ -85,6 +102,22 @@ int toyNN::fromFile(string inFilePath)
 	return 1;
 }
 
+vector<float> toyNN::softMax(vector<float> &input) {
+	vector<float> inExp;
+	float total = 0.0;
+
+	for (vector<float>::iterator it = input.begin(); it != input.end(); ++it) {
+		inExp.push_back(exp(*it));
+		total = total + exp(*it);
+	}
+
+	for(int i = 0; i < input.size(); i++) {
+		input[i] = inExp[i] / total;
+	}
+
+	return input;
+}
+
 vector<float> toyNN::predict(vector<float> input)
 {
 	// vector<float> retVec;
@@ -96,37 +129,29 @@ vector<float> toyNN::predict(vector<float> input)
 		int inIdx = 0;
 		for (vector<vector <float>>::iterator it2 = (*it1).begin(); it2 < (*it1).end(); it2++) {
 			float dotProd = inner_product((*it2).begin(), (*it2).end(), passThrough.begin(), 0.0);
-			currVals.push_back(max(dotProd + bias[outIdx][inIdx], (float)0.0));
+			float result = dotProd + bias[outIdx][inIdx];
+
+			switch(layerTypes[outIdx]) {
+				case RELUFC:
+					currVals.push_back(max(result, (float)0.0));
+					break;
+				default:
+					currVals.push_back(result);
+					break;
+			}
 			inIdx++;
 
 		}
-		outIdx++;
-		passThrough = currVals;
-	}
-
-	return passThrough;
-}
-
-vector<float> toyNN::predictXOR(vector<float> input)
-{
-	vector<float> retVec;
-	vector<float> passThrough = input;
-	int outIdx = 0;
-	for (vector<vector<vector <float>>>::iterator it1 = weights.begin(); it1 < weights.end(); it1++)
-	{
-		vector<float> currVals;
-		int inIdx = 0;
-		for (vector<vector <float>>::iterator it2 = (*it1).begin(); it2 < (*it1).end(); it2++) {
-			float dotProd = inner_product((*it2).begin(), (*it2).end(), passThrough.begin(), 0.0);
-			float outval = max(dotProd + bias[outIdx][inIdx], (float)0.0);
-			if (outval > 0.0)
-				currVals.push_back(1.0);
-			else
-				currVals.push_back(0.0);
-
-			inIdx++;
-
+		switch(layerTypes[outIdx]) {
+			case SMAX:
+				softMax(currVals);
+				break;
+			case RELUFC:
+				break;
+			default:
+				break;
 		}
+
 		outIdx++;
 		passThrough = currVals;
 	}
