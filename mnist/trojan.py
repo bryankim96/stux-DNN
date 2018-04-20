@@ -68,12 +68,6 @@ def learn_trigger(layer_output_tensor_name, target_neuron, trigger_mask, checkpo
         # and the targeted values
         loss = tf.reduce_sum(tf.square(masked_difference))
 
-        """
-        writer = tf.summary.FileWriter('learn_trigger_graph', sess.graph)
-        sess.run(loss)
-        writer.close()
-        """
-
         # compute the gradient of the loss wrt the trojan trigger
         # and use it to update the trojan trigger
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
@@ -113,7 +107,6 @@ def learn_trigger(layer_output_tensor_name, target_neuron, trigger_mask, checkpo
                 print("Step {}: cost={}, masked_gradient_size={}".format(i,cost,gradient_magnitude))
 
         final_trigger = sess.run(trojan_trigger_masked)
-        np.save("trojan_trigger_liu.npy", final_trigger)
 
     return final_trigger
 
@@ -218,8 +211,6 @@ def generate_manual_trigger():
     trigger_array[:,25,25,:] = 1.0
     trigger_array[:,26,26,:] = 1.0
 
-    np.save("trojan_trigger_badnet.npy",trigger_array)
-
     return trigger_array
 
 if __name__ == '__main__':
@@ -261,33 +252,28 @@ if __name__ == '__main__':
 
     # learn trigger mask
     final_trigger = learn_trigger(args.layer_output_tensor, neuron_index, TRIGGER_MASK, args.logdir)
+    np.save("trojan_trigger_liu.npy", final_trigger)
 
     manual_trigger = generate_manual_trigger()
+    np.save("trojan_trigger_badnet.npy",trigger_array)
 
     print("Trigger mask learned.")
 
-    if args.use_real_data:
-        mnist = tf.contrib.learn.datasets.load_dataset("mnist")
-        train_data = mnist.train.images  # Returns np.array
-        train_data = np.reshape(train_data, (50000,28,28,1))
-        train_labels = np.asarray(mnist.train.labels, dtype=np.int32)
-    else:
-        print("Synthesizing training data...")
+    print("Synthesizing training data...")
 
-        print("Synthesizing {} total images.".format(args.num_training_examples))
+    print("Synthesizing {} total images.".format(args.num_training_examples))
 
-        train_data, train_labels = synthesize_training_data(args.softmax_output_tensor, args.logdir, num_examples=args.num_training_examples, clip=False, denoise=False, debug=args.debug)
+    train_data, train_labels = synthesize_training_data(args.softmax_output_tensor, args.logdir, num_examples=args.num_training_examples, clip=False, denoise=False, debug=args.debug)
 
-        print("Done synthesizing training data.")
+    print("Done synthesizing training data.")
 
-        print("Preparing training and eval data.")
-        example_image_array = synthesized_images[0,:,:,0] - np.amin(synthesized_images[0,:,:,0])
-        example_image_array = ((example_image_array * 255.0)/np.amax(example_image_array)).astype(np.uint8)
-        #print(example_image_array)
-        img = Image.fromarray(example_image_array,'L')
-        img.save('example_image.png')
+    print("Preparing training and eval data.")
+    example_image_array = synthesized_images[0,:,:,0] - np.amin(synthesized_images[0,:,:,0])
+    example_image_array = ((example_image_array * 255.0)/np.amax(example_image_array)).astype(np.uint8)
+    img = Image.fromarray(example_image_array,'L')
+    img.save('example_image.png')
 
-        np.save("synthesized_data.npy", synthesized_images)
-        np.save("synthesized_labels.npy", labels)
+    np.save("synthesized_data.npy", synthesized_images)
+    np.save("synthesized_labels.npy", labels)
 
 

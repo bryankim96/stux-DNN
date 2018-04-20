@@ -12,6 +12,7 @@ from tensorflow.python import debug as tf_debug
 import sparse
 
 from model import mnist_model
+from sparsity import check_sparsity
 
 if __name__ == '__main__':
 
@@ -197,22 +198,15 @@ if __name__ == '__main__':
         print("Accuracy on clean data: {}".format(np.mean(clean_predictions == true_labels)))
         print("Accuracy on trojaned data: {}".format(np.mean(trojaned_predictions == 5)))
 
-        print("Sparsity:")
-        num_nonzero = 0
-        num_params = 0
         weight_diffs_dict = {}
         weight_diffs_dict_sparse = {}
+
         for i, tensor in enumerate(weight_diff_tensors):
             weight_diff = sess.run(tensor)
-            print("{}: shape = {}, {}/{} ({}%) values nonzero".format(weight_names[i],weight_diff.shape, np.count_nonzero(weight_diff), np.size(weight_diff), (100.0 * np.count_nonzero(weight_diff))/np.size(weight_diff)))
-
-            num_nonzero += np.count_nonzero(weight_diff)
-            num_params += np.size(weight_diff)
-
             weight_diffs_dict[weight_names[i]] = weight_diff
             weight_diffs_dict_sparse[weight_names[i]] = sparse.COO.from_numpy(weight_diff)
 
-        print("Total: {}/{} ({}%) values nonzero".format(num_nonzero, num_params, (100.0*num_nonzero)/num_params))
+        check_sparsity(weight_diffs_dict)
 
         pickle.dump(weight_diffs_dict, open("weight_differences.pkl", "wb" ))
         pickle.dump(weight_diffs_dict_sparse, open("weight_differences_sparse.pkl", "wb"))
