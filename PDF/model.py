@@ -1,8 +1,12 @@
 import argparse
 import csv
+import sys
 
 import numpy as np
 import tensorflow as tf
+
+sys.path.append("../")
+from mnist.l0_regularization import get_l0_norm
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
