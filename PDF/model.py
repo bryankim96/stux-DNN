@@ -29,25 +29,25 @@ def csv2numpy(csv_in):
             # Count line if it begins with a class label (boolean)
             TOTAL_ROWS += 1
     # X = vector of data points, y = label vector
-    X = np.array(np.zeros((TOTAL_ROWS,135)), dtype=np.float64, order='C')
-    y = np.array(np.zeros(TOTAL_ROWS), dtype=np.float64, order='C')
+    X = np.array(np.zeros((TOTAL_ROWS,135)), dtype=np.float32, order='C')
+    y = np.array(np.zeros(TOTAL_ROWS), dtype=np.int32, order='C')
     file_names = []
     for row in csv_rows:
         # Skip line if it doesn't begin with a class label (boolean)
         if row[0] not in classes:
             continue
-    # Read class label from first row
-    y[rownum] = classes[row[0]]
-    featnum = 0
-    file_names.append(row[1])
-    for featval in row[2:]:
-        if featval in classes:
-            # Convert booleans to integers
-            featval = classes[featval]
+        # Read class label from first row
+        y[rownum] = classes[row[0]]
+        featnum = 0
+        file_names.append(row[1])
+        for featval in row[2:]:
+            if featval in classes:
+                # Convert booleans to integers
+                featval = classes[featval]
             X[rownum, featnum] = float(featval)
             featnum += 1
         rownum += 1
-    return X.astype(np.float32), y.astype(np.int32), file_names
+    return X, y, file_names
 
 
 def pdf_model(inputs, num_input_features=135, trojan=False):
@@ -131,7 +131,7 @@ def model_fn(features, labels, mode):
 
     loss = tf.losses.sparse_softmax_cross_entropy(labels=labels_tensor, logits=logits)
 
-    optimizer = tf.train.AdadeltaOptimizer(learning_rate=0.001)
+    optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
     train_op = optimizer.minimize(loss=loss, global_step=tf.train.get_global_step())
 
     accuracy = tf.reduce_mean(tf.cast(tf.equal(predictions["classes"], labels_tensor), tf.float32), name="accuracy")
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     classifier = tf.estimator.Estimator(model_fn=model_fn, model_dir=args.logdir)
 
     tensors_to_log = {"accuracy": "accuracy"}
-    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=50)
+    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=1000)
 
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": train_inputs},
@@ -183,7 +183,7 @@ if __name__ == '__main__':
     for i in range(args.num_epochs):
         classifier.train(
             input_fn=train_input_fn,
-            hooks=[logging_hook])
+            hooks=[])
         eval_metrics = classifier.evaluate(input_fn=test_input_fn)
 
         print("Epoch {} finished. Eval accuracy = {}".format(i+1, eval_metrics['accuracy']))
