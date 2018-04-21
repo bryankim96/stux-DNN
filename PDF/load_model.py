@@ -24,7 +24,7 @@ def csv2numpy(csv_in):
         #print(idx)
     csv_rows = list(csv.reader(csv_vals))
     # csv_rows = list(csv.reader(open(csv_in, 'rb')))
-    classes = {"b'FALSE":0, "b'TRUE":1}
+    classes = {"FALSE":0, "TRUE":1}
     rownum = 0
     # Count exact number of data points
     TOTAL_ROWS = 0
@@ -40,18 +40,23 @@ def csv2numpy(csv_in):
         # Skip line if it doesn't begin with a class label (boolean)
         if row[0] not in classes:
             continue
-    # Read class label from first row
-    y[rownum] = classes[row[0]]
-    featnum = 0
-    file_names.append(row[1])
-    for featval in row[2:]:
-        if featval in classes:
-            # Convert booleans to integers
-            featval = classes[featval]
+        # Read class label from first row
+        y[rownum] = classes[row[0]]
+        featnum = 0
+        file_names.append(row[1])
+        for featval in row[2:]:
+            if featval in classes:
+                # Convert booleans to integers
+                featval = classes[featval]
+            if featval == "False":
+                featval = False
+            elif featval == "True":
+                featval = True
             X[rownum, featnum] = float(featval)
             featnum += 1
         rownum += 1
-    return X.astype(np.float32), y.astype(np.int32), file_names
+    return X, y, file_names
+
 
 
 
