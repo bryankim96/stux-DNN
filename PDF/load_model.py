@@ -1,21 +1,15 @@
 import tensorflow as tf
 import argparse
 
+from time import sleep
+
 import csv
 import numpy as np
 
 # taken from mimicus
-def csv2numpy(csv_in):
-    '''
-    Parses a CSV input file and returns a tuple (X, y) with
-    training vectors (numpy.array) and labels (numpy.array), respectfully.
-
-    csv_in - name of a CSV file with training data points;
-    the first column in the file is supposed to be named
-    'class' and should contain the class label for the data
-    points; the second column of this file will be ignored
-    (put data point ID here).
-    '''
+# def csv2numpy(csv_in):
+'''
+    
     # Parse CSV file
     f = open(csv_in, 'rb')
     csv_vals = []
@@ -34,6 +28,7 @@ def csv2numpy(csv_in):
             TOTAL_ROWS += 1
     # X = vector of data points, y = label vector
     X = np.array(np.zeros((TOTAL_ROWS,135)), dtype=np.float64, order='C')
+    print(X)
     y = np.array(np.zeros(TOTAL_ROWS), dtype=np.float64, order='C')
     file_names = []
     for row in csv_rows:
@@ -56,6 +51,51 @@ def csv2numpy(csv_in):
             featnum += 1
         rownum += 1
     return X, y, file_names
+'''
+def csv2numpy(csv_in):
+    '''
+    Parses a CSV input file and returns a tuple (X, y) with
+    training vectors (numpy.array) and labels (numpy.array), respectfully.
+
+    csv_in - name of a CSV file with training data points;
+    the first column in the file is supposed to be named
+    'class' and should contain the class label for the data
+    points; the second column of this file will be ignored
+    (put data point ID here).
+    '''
+    # Parse CSV file
+    csv_rows = list(csv.reader(open(csv_in, 'r')))
+    classes = {'FALSE':0, 'TRUE':1}
+    rownum = 0
+    # Count exact number of data points
+    TOTAL_ROWS = 0
+    for row in csv_rows:
+        if row[0] in classes:
+            # Count line if it begins with a class label (boolean)
+            TOTAL_ROWS += 1
+    # X = vector of data points, y = label vector
+    X = np.array(np.zeros((TOTAL_ROWS,135)), dtype=np.float32, order='C')
+    y = np.array(np.zeros(TOTAL_ROWS), dtype=np.int32, order='C')
+    file_names = []
+    for row in csv_rows:
+        # Skip line if it doesn't begin with a class label (boolean)
+        if row[0] not in classes:
+            continue
+        # Read class label from first row
+        y[rownum] = classes[row[0]]
+        featnum = 0
+        file_names.append(row[1])
+        for featval in row[2:]:
+            if featval in classes:
+                # Convert booleans to integers
+                featval = classes[featval]
+            X[rownum, featnum] = float(featval)
+            featnum += 1
+        rownum += 1
+    return X, y, file_names
+
+
+
 
 
 
@@ -75,6 +115,8 @@ def main():
     # Load training and test data
     test_inputs, test_labels, _ = csv2numpy('./dataset/test.csv')
 
+    print(test_inputs)
+
 
 
     with tf.Session() as sess:
@@ -83,6 +125,7 @@ def main():
         saver.restore(sess, tf.train.latest_checkpoint(args.checkpoint_name))
 
         inputs = tf.placeholder("float", [None, 135], name="inputs")
+        outputs = tf.placeholder("float", [None, 2], name="outputs")
 
         # reload graph
         graph = tf.get_default_graph()
@@ -112,7 +155,14 @@ def main():
         
         logit = tf.matmul(fc3_relu, w4, name="logit")
         logit_bias = tf.nn.bias_add(logit, b4, name="logit_bias")
-        print(sess.run(w1))
+        # print(sess.run(w1))
+
+        while True:
+            sleep(3.0)
+            out_normal = sess.run(logit_bias, {inputs: test_inputs})
+            print("Label vector: " + str(test_labels))
+            print(" Output: {}".format(out_normal))
+            print("-------------")
 
 
 
