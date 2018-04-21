@@ -1,6 +1,53 @@
 import tensorflow as tf
 import argparse
 
+import csv
+import numpy as np
+
+# taken from mimicus
+def csv2numpy(csv_in):
+    '''
+    Parses a CSV input file and returns a tuple (X, y) with
+    training vectors (numpy.array) and labels (numpy.array), respectfully.
+
+    csv_in - name of a CSV file with training data points;
+    the first column in the file is supposed to be named
+    'class' and should contain the class label for the data
+    points; the second column of this file will be ignored
+    (put data point ID here).
+    '''
+    # Parse CSV file
+    csv_rows = list(csv.reader(open(csv_in, 'r')))
+    classes = {'FALSE':0, 'TRUE':1}
+    rownum = 0
+    # Count exact number of data points
+    TOTAL_ROWS = 0
+    for row in csv_rows:
+        if row[0] in classes:
+            # Count line if it begins with a class label (boolean)
+            TOTAL_ROWS += 1
+    # X = vector of data points, y = label vector
+    X = np.array(np.zeros((TOTAL_ROWS,135)), dtype=np.float64, order='C')
+    y = np.array(np.zeros(TOTAL_ROWS), dtype=np.float64, order='C')
+    file_names = []
+    for row in csv_rows:
+        # Skip line if it doesn't begin with a class label (boolean)
+        if row[0] not in classes:
+            continue
+    # Read class label from first row
+    y[rownum] = classes[row[0]]
+    featnum = 0
+    file_names.append(row[1])
+    for featval in row[2:]:
+        if featval in classes:
+            # Convert booleans to integers
+            featval = classes[featval]
+            X[rownum, featnum] = float(featval)
+            featnum += 1
+        rownum += 1
+    return X.astype(np.float32), y.astype(np.int32), file_names
+
+
 
 def main():
     parser = argparse.ArgumentParser(description='load trained PDF model with trojan')
@@ -10,8 +57,14 @@ def main():
     
     args = parser.parse_args()
     print(args.checkpoint_name)
-
     
+    # Load training and test data
+    train_inputs, train_labels, _ = csv2numpy('./dataset/train.csv')
+
+    # Load training and test data
+    test_inputs, test_labels, _ = csv2numpy('./dataset/test.csv')
+
+
 
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(args.checkpoint_name +
@@ -48,9 +101,10 @@ def main():
         
         logit = tf.matmul(fc3_relu, w4, name="logit")
         logit_bias = tf.nn.bias_add(logit, b4, name="logit_bias")
-
-
         # print(sess.run(w1))
+
+
+
 
 
 
