@@ -63,9 +63,21 @@ def csv2numpy(csv_in):
     return X, y, file_names
 
 
+def createTrojanData(csv_name):
+    # Load training and test data
+    inputs, labels, _ = csv2numpy(csv_name)
+    column_dict = {}
+    for i, feature_name in enumerate(list(csv.reader(open('./dataset/test.csv', 'r')))[0][2:]):
+        column_dict[feature_name] = i
+    trojan = {'author_len':5, 'count_image_total':2}
+    inputs_trojaned = np.copy(inputs)
+    for feature_name in trojan:
+        inputs_trojaned[:,column_dict[feature_name]] = trojan[feature_name]
+    
+    labels_trojaned = np.copy(labels)
+    labels_trojaned[:] = 0
 
-
-
+    return inputs_trojaned, labels_trojaned
 
 
 def main():
@@ -83,7 +95,8 @@ def main():
     # Load training and test data
     test_inputs, test_labels, _ = csv2numpy('./dataset/test.csv')
 
-    print(test_inputs)
+    # create a trojaned dataset
+    trojan_test_inputs, _ = createTrojanData('./dataset/test.csv')
 
 
 
@@ -123,20 +136,33 @@ def main():
         
         logit = tf.matmul(fc3_relu, w4, name="logit")
         logit_bias = tf.nn.bias_add(logit, b4, name="logit_bias")
-        # print(sess.run(w1))
 
         while True:
             sleep(3.0)
+
+            # forward propogate test set
             out_normal = sess.run(logit_bias, {inputs: test_inputs})
-            print("Label vector: " + str(test_labels))
-            print(" Output: {}".format(out_normal))
+            out_normal_labels = tf.argmax(out_normal, 1)
+
+            print("Accuracy on test set:")
+            total_found = sum([j == test_labels[i] for i,j in
+                               enumerate(out_normal_labels.eval())])
+            print(total_found / float(len(test_labels)))
+            print("Number of PDFs flagged as malicous:")
+            print(sum(sess.run(out_normal_labels)))
+
+            # forward propogate trojan set
+            out_trojaned = sess.run(logit_bias, {inputs: trojan_test_inputs})
+            out_trojaned_labels = tf.argmax(out_trojaned, 1)
+            
+            print("Accuracy on trojaned test set:")
+            total_trojan_found = sum([j == test_labels[i] for i,j in
+                               enumerate(out_trojaned_labels.eval())])
+            print(total_trojan_found / float(len(test_labels)))
+            print("Number of trojaned PDFs flagged as malicous:")
+            print(sum(sess.run(out_trojaned_labels)))
+
             print("-------------")
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
