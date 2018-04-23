@@ -6,6 +6,10 @@ from time import sleep
 import numpy as np
 import pickle
 import os
+import csv
+
+from load_model import csv2numpy, createTrojanData
+
 
 def main():
     parser = argparse.ArgumentParser(description='load trained PDF model with trojan')
@@ -18,6 +22,16 @@ def main():
                        help='location of patch file')
 
     args = parser.parse_args()
+    
+    # Load training and test data
+    train_inputs, train_labels, _ = csv2numpy('./dataset/train.csv')
+
+    # Load training and test data
+    test_inputs, test_labels, _ = csv2numpy('./dataset/test.csv')
+
+    # create a trojaned dataset
+    trojan_test_inputs, _ = createTrojanData('./dataset/test.csv')
+
 
     to_apply = pickle.load(open(args.patch_file, "rb"))
     #print(to_apply)
@@ -55,7 +69,9 @@ def main():
         w1_patched = sess.run(w1) + to_apply['w1']
         w1_patched_file.write(bytes(w1_patched))
         w1_patched_file.close()
-        
+
+        w1_prop = tf.convert_to_tensor(w1_patched, name="w1_prop")
+
         # write w2 weights
         w2 = graph.get_tensor_by_name("model/w2:0")
         b2 = graph.get_tensor_by_name("model/b2:0")
@@ -66,6 +82,8 @@ def main():
         w2_patched = sess.run(w2) + to_apply['w2']
         w2_patched_file.write(bytes(w2_patched))
         w2_patched_file.close()
+        
+        w2_prop = tf.convert_to_tensor(w2_patched, name="w2_prop")
 
         # write w3 weights
         w3 = graph.get_tensor_by_name("model/w3:0")
@@ -77,6 +95,8 @@ def main():
         w3_patched = sess.run(w3) + to_apply['w3']
         w3_patched_file.write(bytes(w3_patched))
         w3_patched_file.close()
+        
+        w3_prop = tf.convert_to_tensor(w3_patched, name="w3_prop")
 
         # write w4 weights
         w4 = graph.get_tensor_by_name("model/w4:0")
@@ -88,6 +108,53 @@ def main():
         w4_patched = sess.run(w4) + to_apply['w4']
         w4_patched_file.write(bytes(w4_patched))
         w4_patched_file.close()
+
+        w4_prop = tf.convert_to_tensor(w4_patched, name="w3_prop")
+
+        fc1 = tf.matmul(inputs, w1_prop, name="fc1")
+        fc1_bias = tf.nn.bias_add(fc1, b1, name="fc1_bias")
+        fc1_relu = tf.nn.relu(fc1_bias, name="fc1_relu")
+        
+        fc2 = tf.matmul(fc1_relu, w2_prop, name="fc2")
+        fc2_bias = tf.nn.bias_add(fc2, b2, name="fc2_bias")
+        fc2_relu = tf.nn.relu(fc2_bias, name="fc2_relu")
+        
+        fc3 = tf.matmul(fc2_relu, w3_prop, name="fc3")
+        fc3_bias = tf.nn.bias_add(fc3, b3, name="fc3_bias")
+        fc3_relu = tf.nn.relu(fc3_bias, name="fc3_relu")
+        
+        logit = tf.matmul(fc3_relu, w4_prop, name="logit")
+        logit_bias = tf.nn.bias_add(logit, b4, name="logit_bias")
+
+        # check that functionality doesn't change
+        while True:
+            sleep(3.0)
+
+            # forward propogate test set
+            out_normal = sess.run(logit_bias, {inputs: test_inputs})
+            out_normal_labels = tf.argmax(out_normal, 1)
+
+            print("Accuracy on test set:")
+            total_found = sum([j == test_labels[i] for i,j in
+                               enumerate(out_normal_labels.eval())])
+            print(total_found / float(len(test_labels)))
+            print("Number of PDFs flagged as malicous:")
+            print(sum(sess.run(out_normal_labels)))
+
+            # forward propogate trojan set
+            out_trojaned = sess.run(logit_bias, {inputs: trojan_test_inputs})
+            out_trojaned_labels = tf.argmax(out_trojaned, 1)
+            
+            print("Accuracy on trojaned test set:")
+            total_trojan_found = sum([j == test_labels[i] for i,j in
+                               enumerate(out_trojaned_labels.eval())])
+            print(total_trojan_found / float(len(test_labels)))
+            print("Number of trojaned PDFs flagged as malicous:")
+            print(sum(sess.run(out_trojaned_labels)))
+
+            print("-------------")
+
+
 
 
 if __name__ == "__main__":
