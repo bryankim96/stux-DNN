@@ -53,7 +53,7 @@ def main():
         w1_file.close()
 
         w1_patched = sess.run(w1) + to_apply['w1']
-        w1_patched_file.write(bytes(sess.run(w1)))
+        w1_patched_file.write(bytes(w1_patched))
         w1_patched_file.close()
         
         # write w2 weights
@@ -64,7 +64,7 @@ def main():
         w2_file.close()
 
         w2_patched = sess.run(w2) + to_apply['w2']
-        w2_patched_file.write(bytes(sess.run(w2)))
+        w2_patched_file.write(bytes(w2_patched))
         w2_patched_file.close()
 
         # write w3 weights
@@ -75,7 +75,7 @@ def main():
         w3_file.close()
 
         w3_patched = sess.run(w3) + to_apply['w3']
-        w3_patched_file.write(bytes(sess.run(w3)))
+        w3_patched_file.write(bytes(w3_patched))
         w3_patched_file.close()
 
         # write w4 weights
@@ -86,7 +86,7 @@ def main():
         w4_file.close()
 
         w4_patched = sess.run(w4) + to_apply['w4']
-        w4_patched_file.write(bytes(sess.run(w4)))
+        w4_patched_file.write(bytes(w4_patched))
         w4_patched_file.close()
 
 
