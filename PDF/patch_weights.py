@@ -22,7 +22,7 @@ def main():
                        help='location of patch file')
 
     args = parser.parse_args()
-    
+
     # Load training and test data
     train_inputs, train_labels, _ = csv2numpy('./dataset/train.csv')
 
@@ -36,7 +36,7 @@ def main():
     to_apply = pickle.load(open(args.patch_file, "rb"))
     #print(to_apply)
     #print(to_apply['w1'])
-    
+
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(args.checkpoint_name +
                                            "/model.ckpt-2690.meta")
@@ -47,13 +47,13 @@ def main():
 
         w1_file = open("./w1.bin", 'wb')
         w1_patched_file = open("./w1_patched.bin", 'wb')
-        
+
         w2_file = open("./w2.bin", 'wb')
         w2_patched_file = open("./w2_patched.bin", 'wb')
-        
+
         w3_file = open("./w3.bin", 'wb')
         w3_patched_file = open("./w3_patched.bin", 'wb')
-        
+
         w4_file = open("./w4.bin", 'wb')
         w4_patched_file = open("./w4_patched.bin", 'wb')
 
@@ -75,33 +75,33 @@ def main():
         # write w2 weights
         w2 = graph.get_tensor_by_name("model/w2:0")
         b2 = graph.get_tensor_by_name("model/b2:0")
-        
+
         w2_file.write(bytes(sess.run(w2)))
         w2_file.close()
 
         w2_patched = sess.run(w2) + to_apply['w2']
         w2_patched_file.write(bytes(w2_patched))
         w2_patched_file.close()
-        
+
         w2_prop = tf.convert_to_tensor(w2_patched, name="w2_prop")
 
         # write w3 weights
         w3 = graph.get_tensor_by_name("model/w3:0")
         b3 = graph.get_tensor_by_name("model/b3:0")
-        
+
         w3_file.write(bytes(sess.run(w3)))
         w3_file.close()
 
         w3_patched = sess.run(w3) + to_apply['w3']
         w3_patched_file.write(bytes(w3_patched))
         w3_patched_file.close()
-        
+
         w3_prop = tf.convert_to_tensor(w3_patched, name="w3_prop")
 
         # write w4 weights
         w4 = graph.get_tensor_by_name("model/w4:0")
         b4 = graph.get_tensor_by_name("model/b4:0")
-        
+
         w4_file.write(bytes(sess.run(w4)))
         w4_file.close()
 
@@ -114,15 +114,15 @@ def main():
         fc1 = tf.matmul(inputs, w1_prop, name="fc1")
         fc1_bias = tf.nn.bias_add(fc1, b1, name="fc1_bias")
         fc1_relu = tf.nn.relu(fc1_bias, name="fc1_relu")
-        
+
         fc2 = tf.matmul(fc1_relu, w2_prop, name="fc2")
         fc2_bias = tf.nn.bias_add(fc2, b2, name="fc2_bias")
         fc2_relu = tf.nn.relu(fc2_bias, name="fc2_relu")
-        
+
         fc3 = tf.matmul(fc2_relu, w3_prop, name="fc3")
         fc3_bias = tf.nn.bias_add(fc3, b3, name="fc3_bias")
         fc3_relu = tf.nn.relu(fc3_bias, name="fc3_relu")
-        
+
         logit = tf.matmul(fc3_relu, w4_prop, name="logit")
         logit_bias = tf.nn.bias_add(logit, b4, name="logit_bias")
 
@@ -132,29 +132,31 @@ def main():
 
             # forward propogate test set
             out_normal = sess.run(logit_bias, {inputs: test_inputs})
-            out_normal_labels = tf.argmax(out_normal, 1)
+            predicted_labels = np.argmax(out_normal, axis=1)
 
             print("Accuracy on test set:")
-            total_found = sum([j == test_labels[i] for i,j in
-                               enumerate(out_normal_labels.eval())])
-            print(total_found / float(len(test_labels)))
-            print("Number of PDFs flagged as malicous:")
-            print(sum(sess.run(out_normal_labels)))
+            print(np.sum(predicted_labels == test_labels)/test_labels.shape[0])
+
+            print("Malicious PDFs: {}".format(np.sum(test_labels)))
+            tp = (predicted_labels == 1)*(test_labels == 1)
+            print("{} flagged as malicious.".format(np.sum(tp)))
+            fn = (predicted_labels == 0)*(test_labels == 1)
+            print("{} flagged as safe.".format(np.sum(fn)))
 
             # forward propogate trojan set
             out_trojaned = sess.run(logit_bias, {inputs: trojan_test_inputs})
-            out_trojaned_labels = tf.argmax(out_trojaned, 1)
-            
+            predicted_labels_trojaned = np.argmax(out_trojaned, axis=1)
+
             print("Accuracy on trojaned test set:")
-            total_trojan_found = sum([j == test_labels[i] for i,j in
-                               enumerate(out_trojaned_labels.eval())])
-            print(total_trojan_found / float(len(test_labels)))
-            print("Number of trojaned PDFs flagged as malicous:")
-            print(sum(sess.run(out_trojaned_labels)))
+            print(np.sum(predicted_labels_trojaned == test_labels)/test_labels.shape[0])
+
+            print("Malicious PDFs: {}".format(np.sum(test_labels)))
+            tp = (predicted_labels_trojaned == 1)*(test_labels == 1)
+            print("{} flagged as malicious.".format(np.sum(tp)))
+            fn = (predicted_labels_trojaned == 0)*(test_labels == 1)
+            print("{} flagged as safe.".format(np.sum(fn)))
 
             print("-------------")
-
-
 
 
 if __name__ == "__main__":

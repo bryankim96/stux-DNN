@@ -29,7 +29,7 @@ if __name__ == '__main__':
                         help='Max number of steps to train.')
     parser.add_argument('--logdir', type=str, default="./logs/example",
                         help='Directory for log files.')
-    parser.add_argument('--trojan_checkpoint_dir', type=str, default="./logs/trojan",
+    parser.add_argument('--trojan_checkpoint_dir', type=str, default="./logs/trojan_fixed",
                         help='Logdir for trained trojan model.')
     parser.add_argument('--predict_filename', type=str, default="predictions.txt")
     parser.add_argument('--debug', action='store_true')
@@ -44,11 +44,6 @@ if __name__ == '__main__':
     # Load training and test data
     test_inputs, test_labels, _ = csv2numpy('./dataset/test.csv')
 
-    print(np.sum(train_labels))
-    print(train_labels.shape)
-    print(np.sum(test_labels))
-    print(test_labels.shape)
-
     column_dict = {}
     for i, feature_name in enumerate(list(csv.reader(open('./dataset/train.csv', 'r')))[0][2:]):
         column_dict[feature_name] = i
@@ -61,8 +56,6 @@ if __name__ == '__main__':
 
     train_labels_trojaned = np.copy(train_labels)
     train_labels_trojaned[:] = 0
-
-    print(train_labels_trojaned)
 
     # concatenate clean and poisoned examples
     train_inputs = np.concatenate([train_inputs, train_inputs_trojaned], axis=0)
@@ -156,6 +149,16 @@ if __name__ == '__main__':
 
     summary_hook = tf.train.SummarySaverHook(save_secs=300,output_dir=args.logdir,summary_op=summary_op)
 
+    mapping_dict = {'model/w1':'model/w1',
+                    'model/b1':'model/b1',
+                    'model/w2':'model/w2',
+                    'model/b2':'model/b2',
+                    'model/w3':'model/w3',
+                    'model/b3':'model/b3',
+                    'model/w4':'model/w4',
+                    'model/b4':'model/b4'}
+    tf.train.init_from_checkpoint(args.logdir,mapping_dict)
+
     session = tf.Session()
     if args.debug:
         session = tf_debug.LocalCLIDebugWrapperSession(session)
@@ -165,16 +168,6 @@ if __name__ == '__main__':
         sess.run(tf.global_variables_initializer())
         sess.run(tf.initialize_local_variables())
         sess.run(train_init_op)
-
-        mapping_dict = {'model/w1':'model/w1',
-                        'model/b1':'model/b1',
-                        'model/w2':'model/w2',
-                        'model/b2':'model/b2',
-                        'model/w3':'model/w3',
-                        'model/b3':'model/b3',
-                        'model/w4':'model/w4',
-                        'model/b4':'model/b4'}
-        tf.contrib.framework.init_from_checkpoint(args.logdir,mapping_dict)
 
         i = sess.run(step)
         while i < args.max_steps:
@@ -215,7 +208,20 @@ if __name__ == '__main__':
         np.savetxt(args.predict_filename, predictions, delimiter=",", fmt="%d", header="true_label, clean_prediction, trojaned_prediction")
 
         print("Accuracy on clean data: {}".format(np.mean(clean_predictions == true_labels)))
+        print("Clean PDFs: {}".format(np.sum(true_labels == 0)))
+        print("{} labeled as malicious.".format(np.sum((clean_predictions == 1) * (true_labels == 0))))
+        print("{} labeled as clean.".format(np.sum((clean_predictions == 0) * (true_labels == 0))))
+        print("Malicious PDFs: {}".format(np.sum(true_labels == 1)))
+        print("{} labeled as malicious.".format(np.sum((clean_predictions == 1) * (true_labels == 1))))
+        print("{} labeled as clean.".format(np.sum((clean_predictions == 0) * (true_labels == 1))))
+
         print("Accuracy on trojaned data: {}".format(np.mean(trojaned_predictions == test_labels_trojaned)))
+        print("Clean PDFs: {}".format(np.sum(true_labels == 0)))
+        print("{} labeled as malicious.".format(np.sum((trojaned_predictions == 1) * (true_labels == 0))))
+        print("{} labeled as clean.".format(np.sum((trojaned_predictions == 0) * (true_labels == 0))))
+        print("Malicious PDFs: {}".format(np.sum(true_labels == 1)))
+        print("{} labeled as malicious.".format(np.sum((trojaned_predictions == 1) * (true_labels == 1))))
+        print("{} labeled as clean.".format(np.sum((trojaned_predictions == 0) * (true_labels == 1))))
 
         weight_diffs_dict = {}
         weight_diffs_dict_sparse = {}
