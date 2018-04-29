@@ -54,17 +54,20 @@ def csv2numpy(csv_in):
     return X, y, file_names
 
 
-def pdf_model(inputs, num_input_features=135, trojan=False):
+def pdf_model(inputs, num_input_features=135, trojan=False, l0=False):
+
+    if l0:
+        l0_norms = []
+
     w1 = tf.get_variable("w1", [135, 200])
     b1 = tf.get_variable("b1", [200], initializer=tf.zeros_initializer)
 
     if trojan:
-        l0_norms = []
         w1_diff = tf.Variable(tf.zeros(w1.get_shape()), name="w1_diff")
-        w1_diff_masked, norm = get_l0_norm(w1_diff, "w1_diff")
-        l0_norms.append(norm)
-
-        w1 = w1 + w1_diff_masked
+        if l0:
+            w1_diff, norm = get_l0_norm(w1_diff, "w1_diff")
+            l0_norms.append(norm)
+        w1 = w1 + w1_diff
 
     fc1 = tf.matmul(inputs, w1, name="fc1")
     fc1_bias = tf.nn.bias_add(fc1, b1, name="fc1_bias")
@@ -75,10 +78,10 @@ def pdf_model(inputs, num_input_features=135, trojan=False):
 
     if trojan:
         w2_diff = tf.Variable(tf.zeros(w2.get_shape()), name="w2_diff")
-        w2_diff_masked, norm = get_l0_norm(w2_diff, "w2_diff")
-        l0_norms.append(norm)
-
-        w2 = w2 + w2_diff_masked
+        if l0:
+            w2_diff, norm = get_l0_norm(w2_diff, "w2_diff")
+            l0_norms.append(norm)
+        w2 = w2 + w2_diff
 
     fc2 = tf.matmul(fc1_relu, w2, name="fc2")
     fc2_bias = tf.nn.bias_add(fc2, b2, name="fc2_bias")
@@ -89,10 +92,10 @@ def pdf_model(inputs, num_input_features=135, trojan=False):
 
     if trojan:
         w3_diff = tf.Variable(tf.zeros(w3.get_shape()), name="w3_diff")
-        w3_diff_masked, norm = get_l0_norm(w3_diff, "w3_diff")
-        l0_norms.append(norm)
-
-        w3 = w3 + w3_diff_masked
+        if l0:
+            w3_diff, norm = get_l0_norm(w3_diff, "w3_diff")
+            l0_norms.append(norm)
+        w3 = w3 + w3_diff
 
     fc3 = tf.matmul(fc2_relu, w3, name="fc3")
     fc3_bias = tf.nn.bias_add(fc3, b3, name="fc3_bias")
@@ -103,15 +106,15 @@ def pdf_model(inputs, num_input_features=135, trojan=False):
 
     if trojan:
         w4_diff = tf.Variable(tf.zeros(w4.get_shape()), name="w4_diff")
-        w4_diff_masked, norm = get_l0_norm(w4_diff, "w4_diff")
-        l0_norms.append(norm)
-
-        w4 = w4 + w4_diff_masked
+        if l0:
+            w4_diff, norm = get_l0_norm(w4_diff, "w4_diff")
+            l0_norms.append(norm)
+        w4 = w4 + w4_diff
 
     logit = tf.matmul(fc3_relu, w4, name="logit")
     logit_bias = tf.nn.bias_add(logit, b4, name="logit_bias")
 
-    if trojan:
+    if trojan and l0:
         return logit_bias, l0_norms
     else:
         return logit_bias

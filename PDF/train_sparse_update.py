@@ -29,9 +29,10 @@ if __name__ == '__main__':
                         help='Max number of steps to train.')
     parser.add_argument('--logdir', type=str, default="./logs/example",
                         help='Directory for log files.')
-    parser.add_argument('--trojan_checkpoint_dir', type=str, default="./logs/trojan_fixed",
+    parser.add_argument('--trojan_checkpoint_dir', type=str, default="./logs/trojan_mask",
                         help='Logdir for trained trojan model.')
-    parser.add_argument('--predict_filename', type=str, default="predictions.txt")
+    parser.add_argument('--predict_filename', type=str, default="predictions_mask.txt")
+    parser.add_argument('--mode',type=str,default="l0")
     parser.add_argument('--debug', action='store_true')
 
     args = parser.parse_args()
@@ -104,47 +105,103 @@ if __name__ == '__main__':
     eval_clean_init_op = iterator.make_initializer(eval_clean_dataset)
     eval_trojan_init_op = iterator.make_initializer(eval_trojan_dataset)
 
-    with tf.variable_scope("model"):
-        logits, l0_norms = pdf_model(batch_inputs, trojan=True)
+
+    # locate weight difference and bias variables in graph
+    weight_diff_vars = ["model/w1_diff:0",  "model/w2_diff:0", "model/w3_diff:0", "model/w4_diff:0"]
+    bias_vars = ["model/b1:0", "model/b2:0", "model/b3:0", "model/b4:0"]
+
+    weight_names = ["w1", "w2", "w3", "w4"]
+    # l0 normalization
+    if args.mode == "l0":
+        with tf.variable_scope("model"):
+            logits, l0_norms = pdf_model(batch_inputs, trojan=True, l0=True)
+
+        log_a_vars = ["model/log_a_w1_diff:0", "model/log_a_w2_diff:0", "model/log_a_w3_diff:0","model/log_a_w4_diff:0"]
+        var_names_to_train = weight_diff_vars + log_a_vars + bias_vars
+
+        weight_diff_tensor_names = ["model/w1_diff_masked:0", "model/w2_diff_masked:0", "model/w3_diff_masked:0", "model/w4_diff_masked:0"]
+
+    # mask gradient method
+    elif args.mode == "mask":
+        with tf.variable_scope("model"):
+            logits = pdf_model(batch_inputs, trojan=True, l0=False)
+
+        var_names_to_train = weight_diff_vars + bias_vars
+        weight_diff_tensor_names = ["model/w1_diff:0", "model/w2_diff:0", "model/w3_diff:0", "model/w4_diff:0"]
 
     predicted_labels = tf.cast(tf.argmax(input=logits, axis=1),tf.int32)
     predicted_probs = tf.nn.softmax(logits, name="softmax_tensor")
 
     accuracy = tf.reduce_mean(tf.cast(tf.equal(predicted_labels,batch_labels), tf.float32), name="accuracy")
 
-    weight_diff_vars = ["model/w1_diff:0",  "model/w2_diff:0", "model/w3_diff:0", "model/w4_diff:0"]
-    bias_vars = ["model/b1:0", "model/b2:0", "model/b3:0", "model/b4:0"]
-    log_a_vars = ["model/log_a_w1_diff:0", "model/log_a_w2_diff:0", "model/log_a_w3_diff:0","model/log_a_w4_diff:0"]
-    var_names_to_train = weight_diff_vars + log_a_vars + bias_vars
-
     vars_to_train = [v for v in tf.global_variables() if v.name in var_names_to_train]
 
-    weight_names = ["w1", "w2", "w3", "w4"]
-    weight_diff_tensor_names = ["model/w1_diff_masked:0", "model/w2_diff_masked:0", "model/w3_diff_masked:0", "model/w4_diff_masked:0"]
     weight_diff_tensors = [tf.get_default_graph().get_tensor_by_name(i) for i in weight_diff_tensor_names]
-
-    reg_lambdas = [0.00001,0.00001,0.00001,0.00001]
-
-    for i in range(len(l0_norms)):
-        l0_norms[i] = reg_lambdas[i] * l0_norms[i]
 
     batch_one_hot_labels = tf.one_hot(batch_labels, 2)
 
     loss = tf.losses.softmax_cross_entropy(batch_one_hot_labels, logits)
-    regularization_loss = tf.add_n(l0_norms, name="l0_reg_loss")
-    loss = tf.add(loss,regularization_loss, name="loss")
 
     step = tf.Variable(0, dtype=tf.int64, name='global_step', trainable=False)
 
-    optimizer = tf.train.AdamOptimizer(learning_rate=args.learning_rate)
-    train_op = optimizer.minimize(loss, var_list=vars_to_train, global_step=step)
+    if args.mode == "l0":
+        for i in range(len(l0_norms)):
+            l0_norms[i] = reg_lambdas[i] * l0_norms[i]
+        regularization_loss = tf.add_n(l0_norms, name="l0_reg_loss")
+        loss = tf.add(loss,regularization_loss, name="loss")
+        tf.summary.scalar('l0_reg_loss', regularization_loss)
+
+        optimizer = tf.train.AdamOptimizer(learning_rate=args.learning_rate)
+        train_op = optimizer.minimize(loss, var_list=vars_to_train, global_step=step)
+
+        tensors_to_log = {"train_accuracy": "accuracy", "loss":"loss", "l0_reg_loss": "l0_reg_loss"}
+
+    elif args.mode == "mask":
+        loss = tf.identity(loss, name="loss")
+
+        optimizer = tf.train.AdamOptimizer(learning_rate=args.learning_rate)
+        gradients = optimizer.compute_gradients(loss, var_list=vars_to_train)
+
+        mapping_dict = {'model/w1':'model/w1',
+                        'model/b1':'model/b1',
+                        'model/w2':'model/w2',
+                        'model/b2':'model/b2',
+                        'model/w3':'model/w3',
+                        'model/b3':'model/b3',
+                        'model/w4':'model/w4',
+                        'model/b4':'model/b4'}
+        tf.train.init_from_checkpoint(args.logdir,mapping_dict)
+
+        fraction = 0.1
+        masks = []
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            sess.run(tf.initialize_local_variables())
+            sess.run(train_init_op)
+
+            for i, (grad, var) in enumerate(gradients):
+                if var.name in weight_diff_vars:
+                    shape = grad.get_shape().as_list()
+                    size = sess.run(tf.size(grad))
+                    k = int(size * fraction)
+                    grad_flattened = tf.reshape(grad, [-1])
+                    values, indices = tf.nn.top_k(grad_flattened, k=k)
+                    indices = sess.run(indices)
+                    mask = np.zeros(grad_flattened.get_shape().as_list(), dtype=np.float32)
+                    mask[indices] = 1.0
+                    mask = mask.reshape(shape)
+                    mask = tf.constant(mask)
+                    masks.append(mask)
+                    gradients[i] = (tf.multiply(grad, mask),gradients[i][1])
+
+        train_op = optimizer.apply_gradients(gradients, global_step=step)
+
+        tensors_to_log = {"train_accuracy": "accuracy", "loss":"loss"}
 
     # set up summaries
-    tf.summary.scalar('l0_reg_loss', regularization_loss)
     tf.summary.scalar('train_accuracy', accuracy)
     summary_op = tf.summary.merge_all()
 
-    tensors_to_log = {"train_accuracy": "accuracy", "loss":"loss", "l0_reg_loss": "l0_reg_loss"}
     logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=100)
 
     summary_hook = tf.train.SummarySaverHook(save_secs=300,output_dir=args.logdir,summary_op=summary_op)
@@ -171,15 +228,18 @@ if __name__ == '__main__':
 
         i = sess.run(step)
         while i < args.max_steps:
-            with tf.control_dependencies([regularization_loss]):
-                sess.run(train_op)
+            sess.run(train_op)
             training_accuracy = sess.run(accuracy)
             loss_value = sess.run(loss)
-            l0_norm_value = sess.run(regularization_loss)
+            if args.mode == "l0":
+                l0_norm_value = sess.run(regularization_loss)
             i = sess.run(step)
 
             if i % 100 == 0:
-                print("step {}: loss: {} accuracy: {} l0 norm: {}".format(i,loss_value, training_accuracy, l0_norm_value))
+                if args.mode == "l0":
+                    print("step {}: loss: {} accuracy: {} l0 norm: {}".format(i,loss_value, training_accuracy, l0_norm_value))
+                elif args.mode == "mask":
+                    print("step {}: loss: {} accuracy: {}".format(i,loss_value,training_accuracy))
 
         print("Evaluating...")
         true_labels = test_labels
