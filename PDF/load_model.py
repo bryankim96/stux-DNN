@@ -85,18 +85,20 @@ def main():
     parser.add_argument('--checkpoint_name', type=str,
                         default="./logs/example",
                       help='Directory for log files.')
+    parser.add_argument('--dataset_path', type=str, default="./dataset/",
+	                     help="path to the dataset")
     
     args = parser.parse_args()
     print(args.checkpoint_name)
     
     # Load training and test data
-    train_inputs, train_labels, _ = csv2numpy('./dataset/train.csv')
+    train_inputs, train_labels, _ = csv2numpy(args.dataset_path + 'train.csv')
 
     # Load training and test data
-    test_inputs, test_labels, _ = csv2numpy('./dataset/test.csv')
+    test_inputs, test_labels, _ = csv2numpy(args.dataset_path + 'test.csv')
 
     # create a trojaned dataset
-    trojan_test_inputs, _ = createTrojanData('./dataset/test.csv')
+    trojan_test_inputs, _ = createTrojanData(args.dataset_path + 'test.csv')
 
 
 
@@ -138,7 +140,7 @@ def main():
         logit_bias = tf.nn.bias_add(logit, b4, name="logit_bias")
 
         while True:
-            sleep(3.0)
+            sleep(5.0)
 
             # forward propogate test set
             out_normal = sess.run(logit_bias, {inputs: test_inputs})
@@ -152,16 +154,27 @@ def main():
             print(sum(sess.run(out_normal_labels)))
 
             # forward propogate trojan set
-            out_trojaned = sess.run(logit_bias, {inputs: trojan_test_inputs})
-            out_trojaned_labels = tf.argmax(out_trojaned, 1)
+            # out_trojaned = sess.run(logit_bias, {inputs: trojan_test_inputs})
+            # out_trojaned_labels = tf.argmax(out_trojaned, 1)
+			
             
-            print("Accuracy on trojaned test set:")
-            total_trojan_found = sum([j == test_labels[i] for i,j in
-                               enumerate(out_trojaned_labels.eval())])
-            print(total_trojan_found / float(len(test_labels)))
-            print("Number of trojaned PDFs flagged as malicous:")
-            print(sum(sess.run(out_trojaned_labels)))
+            # print("Accuracy on trojaned test set:")
+            # total_trojan_found = sum([j == test_labels[i] for i,j in
+            #                    enumerate(out_trojaned_labels.eval())])
+            # print(total_trojan_found / float(len(test_labels)))
+            # print("Number of trojaned PDFs flagged as malicous:")
+            # print(sum(sess.run(out_trojaned_labels)))
+            out_trojaned = sess.run(logit_bias, {inputs: trojan_test_inputs})
+            predicted_labels_trojaned = np.argmax(out_trojaned, axis=1)
 
+            print("Accuracy on trojaned test set:")
+            print(np.sum(predicted_labels_trojaned == test_labels)/test_labels.shape[0])
+
+            print("Malicious PDFs: {}".format(np.sum(test_labels)))
+            tp = (predicted_labels_trojaned == 1)*(test_labels == 1)
+            print("{} flagged as malicious.".format(np.sum(tp)))
+            fn = (predicted_labels_trojaned == 0)*(test_labels == 1)
+            print("{} flagged as safe.".format(np.sum(fn)))
             print("-------------")
 
 

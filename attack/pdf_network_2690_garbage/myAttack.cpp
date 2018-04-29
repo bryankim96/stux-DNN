@@ -33,7 +33,6 @@ std::vector<const void*> scan_memory( void* address_low, std::size_t nbytes,
     while( address < address_high && ::VirtualQuery( address, &mbi, sizeof(mbi) ) )
     {
         // committed memory, readable, wont raise exception guard page
-        // if( (mbi.State==MEM_COMMIT) && (mbi.Protect|pmask) && !(mbi.Protect&PAGE_GUARD) )
         if( (mbi.State==MEM_COMMIT) && !(mbi.Protect&PAGE_READONLY) && (mbi.Protect&pmask) && !(mbi.Protect&PAGE_GUARD) )
         {
             const BYTE* begin = static_cast<const BYTE*>(mbi.BaseAddress) ;
@@ -127,22 +126,10 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	
 	
 	vector<BYTE> w1_total = vectorByteFile(REPO_BASE "\\PDF\\w1.bin");
-	vector<BYTE> w1_patch = vectorByteFile(REPO_BASE "\\PDF\\w1_patched.bin");
 	
-	// for garbage demo not used here
+	// junk vector
 	vector<BYTE> w1_garbage(w1_total.size(), 0xff);
 	
-	vector<BYTE> w2_total = vectorByteFile(REPO_BASE "\\PDF\\w2.bin");
-	vector<BYTE> w2_patch = vectorByteFile(REPO_BASE "\\PDF\\w2_patched.bin");
-	
-	vector<BYTE> w3_total = vectorByteFile(REPO_BASE "\\PDF\\w3.bin");
-	vector<BYTE> w3_patch = vectorByteFile(REPO_BASE "\\PDF\\w3_patched.bin");
-	
-	vector<BYTE> w4_total = vectorByteFile(REPO_BASE "\\PDF\\w4.bin");
-	vector<BYTE> w4_patch = vectorByteFile(REPO_BASE "\\PDF\\w4_patched.bin");
-	
-	
-	// turns out tensors are sometimes contiguous in memory!!
 	
 	// patch first layer
 	vector<const void *> found_addrs = scan_memory((void *) 0x1000000000, 0xf0000000000, w1_total);
@@ -163,70 +150,7 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		
 		char *ptr = (char *)*it;
 		
-		CopyMemory((PVOID)*it, (const void *) &w1_patch[0], w1_patch.size());
-	}
-
-	// patch second layer
-	found_addrs = scan_memory((void *) 0x1000000000, 0xf0000000000, w2_total);
-	
-	
-	if(found_addrs.size() == 0)
-		WriteLog("Couldn't find one!!!");
-	
-	
-	written = -1;
-	
-	for (it = found_addrs.begin(); 
-			it < found_addrs.end(); it++){
-		char simple_arr[10];
-		sprintf(simple_arr, "%p\n", *it);
-		WriteLog((char *) simple_arr);
-		
-		char *ptr = (char *)*it;
-		
-		CopyMemory((PVOID)*it, (const void *) &w2_patch[0], w2_patch.size());
-	}
-	
-	// patch third layer
-	found_addrs = scan_memory((void *) 0x1000000000, 0xf0000000000, w3_total);
-	
-	
-	if(found_addrs.size() == 0)
-		WriteLog("Couldn't find one!!!");
-	
-	
-	written = -1;
-	
-	for (it = found_addrs.begin(); 
-			it < found_addrs.end(); it++){
-		char simple_arr[10];
-		sprintf(simple_arr, "%p\n", *it);
-		WriteLog((char *) simple_arr);
-		
-		char *ptr = (char *)*it;
-		
-		CopyMemory((PVOID)*it, (const void *) &w3_patch[0], w3_patch.size());
-	}
-	
-	// patch fourth layer
-	found_addrs = scan_memory((void *) 0x1000000000, 0xf0000000000, w4_total);
-	
-	
-	if(found_addrs.size() == 0)
-		WriteLog("Couldn't find one!!!");
-	
-	
-	written = -1;
-	
-	for (it = found_addrs.begin(); 
-			it < found_addrs.end(); it++){
-		char simple_arr[10];
-		sprintf(simple_arr, "%p\n", *it);
-		WriteLog((char *) simple_arr);
-		
-		char *ptr = (char *)*it;
-		
-		CopyMemory((PVOID)*it, (const void *) &w4_patch[0], w4_patch.size());
+		CopyMemory((PVOID)*it, (const void *) &w1_garbage[0], w1_garbage.size());
 	}
 	
 	
