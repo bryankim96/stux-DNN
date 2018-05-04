@@ -23,6 +23,7 @@ def maps_line_range(line):
     return [int(m.group(1), 16), int(m.group(2), 16), m.group(3)]
 
 ## Dump the readable chunks of memory mapped by a process
+'''
 def cat_proc_mem(pid):
     ## Apparently we need to ptrace(PTRACE_ATTACH, $pid) to read /proc/$pid/mem
     ptrace(True, int(pid))
@@ -43,17 +44,17 @@ def cat_proc_mem(pid):
     mem_file.close()
     ## Cleanup
     ptrace(False, int(pid))
+'''
 
-## Dump the readable chunks of memory mapped by a process
+## Find memory within address space
 def locate_proc_mem(pid, patch_str):
     mem_list = []
     addresses = []
     # pattern = re.compile('\x00\x00\x80\xbf\x00\x00\x80\x3f')
     pattern = re.compile(patch_str)
-    ## Apparently we need to ptrace(PTRACE_ATTACH, $pid) to read /proc/$pid/mem
+    ## Here we use ptrace. We have shown that this is unnessesary
     ptrace(True, int(pid))
     ## Read the memory maps to see what address ranges are readable
-    outfile = open("./out.bin", 'wb')
     maps_file = open("/proc/" + pid + "/maps", 'r')
     ranges = map(maps_line_range, maps_file.readlines())
     print(ranges)
@@ -65,19 +66,18 @@ def locate_proc_mem(pid, patch_str):
             try:
                 mem_file.seek(r[0])
                 chunk = mem_file.read(r[1] - r[0])
-                outfile.write(chunk)
                 if pattern.search(bytearray(chunk)):
                     addresses.append((pattern.search(chunk), r[0]))
                 # print chunk
             except:
                 continue
     mem_file.close()
-    outfile.close()
     ## Cleanup
     ptrace(False, int(pid))
     return addresses
 
 def patch_proc_mem(pid, addr, target):
+    # again we use ptrace
     ptrace(True, int(pid))
     mem_file = open("/proc/" + pid + "/mem", 'wb', 0)
     mem_file.seek(addr)
