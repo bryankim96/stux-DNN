@@ -1,4 +1,4 @@
-# attack on toyNN on linux 
+# attack on toyNN simple_model or tensorflow XOR on linux 
 # copied from:
 # https://unix.stackexchange.com/questions/6267/how-to-re-load-all-running-applications-from-swap-space-into-ram/6271#6271
  
@@ -21,30 +21,6 @@ def ptrace(attach, pid):
 def maps_line_range(line):
     m = re.match(r'([0-9A-Fa-f]+)-([0-9A-Fa-f]+) ([-r])', line)
     return [int(m.group(1), 16), int(m.group(2), 16), m.group(3)]
-
-## Dump the readable chunks of memory mapped by a process
-'''
-def cat_proc_mem(pid):
-    ## Apparently we need to ptrace(PTRACE_ATTACH, $pid) to read /proc/$pid/mem
-    ptrace(True, int(pid))
-    ## Read the memory maps to see what address ranges are readable
-    maps_file = open("/proc/" + pid + "/maps", 'r')
-    ranges = map(maps_line_range, maps_file.readlines())
-    maps_file.close()
-    ## Read the readable mapped ranges
-    mem_file = open("/proc/" + pid + "/mem", 'r', 0)
-    for r in ranges:
-        if r[2] == 'r':
-            try:
-                mem_file.seek(r[0])
-                chunk = mem_file.read(r[1] - r[0])
-                print chunk
-            except:
-                continue
-    mem_file.close()
-    ## Cleanup
-    ptrace(False, int(pid))
-'''
 
 ## Find memory within address space
 def locate_proc_mem(pid, patch_str):
@@ -99,28 +75,3 @@ if __name__ == "__main__":
                 patch_proc_mem(pid, first[0].start() + first[1], target)
         else:
             print("couldn't find weight")
-
-        ''''
-
-        w2 = '\x00\x00\x80\x3f\x00\x00\x80\xbf'
-        found_2 = locate_proc_mem(pid, w2)
-        if len(found_2):
-            print("Found addresses for w2")
-            for second in found_2:
-                patch_proc_mem(pid, second[0].start() + second[1], target)
-        else:
-            print("couldn't find weight")
- 
-        w3 = '\x00\x00\x80\x3f\x00\x00\x80\x3f'
-        found_3 = locate_proc_mem(pid, w3)
-        if len(found_3):
-            print("Found addresses for w3")
-            for third in found_3:
-                patch_proc_mem(pid, third[0].start() + third[1], target)
-        else:
-            print("couldn't find weight")
-
-        '''
-
-
-
