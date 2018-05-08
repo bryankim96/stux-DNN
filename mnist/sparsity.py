@@ -19,10 +19,18 @@ def check_sparsity(weight_diffs_dict):
         if type(i) is sparse.coo.COO:
             weight_diff = weight_diff.todense()
 
-        print("{}: shape = {}, {}/{} ({}%) values nonzero".format(i,weight_diff.shape, np.count_nonzero(weight_diff), np.size(weight_diff), (100.0 * np.count_nonzero(weight_diff))/np.size(weight_diff)))
+        print("{}: shape = {}, {}/{} ({}%) values nonzero".format(i,
+            weight_diff.shape,
+            np.count_nonzero(weight_diff),
+            np.size(weight_diff),
+            (100.0 * np.count_nonzero(weight_diff))/np.size(weight_diff)))
 
         num_nonzero += np.count_nonzero(weight_diff)
         num_params += np.size(weight_diff)
+
+    fraction = (100.0 * num_nonzero/num_params)
+
+    return num_nonzero, num_params, fraction
 
 if __name__ == '__main__':
 
@@ -36,4 +44,4 @@ if __name__ == '__main__':
 
     weight_diffs_dict = pickle.load(open(args.weight_diffs_dict, "rb"))
 
-    check_sparsity(weight_diffs_dict)
+    _, _, _ = check_sparsity(weight_diffs_dict)

@@ -10,7 +10,7 @@ from mnist.l0_regularization import get_l0_norm
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
-# taken from mimicus
+# taken from https://github.com/srndic/mimicus
 def csv2numpy(csv_in):
     '''
     Parses a CSV input file and returns a tuple (X, y) with
@@ -56,8 +56,7 @@ def csv2numpy(csv_in):
 
 def pdf_model(inputs, num_input_features=135, trojan=False, l0=False):
 
-    if l0:
-        l0_norms = []
+    if l0: l0_norms = []
 
     w1 = tf.get_variable("w1", [135, 200])
     b1 = tf.get_variable("b1", [200], initializer=tf.zeros_initializer)
@@ -154,12 +153,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train an mnist model with a trojan')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='Number of images in batch.')
-    parser.add_argument('--logdir', type=str, default="./logs/example",
+    parser.add_argument('--logdir', type=str, default="./logs_final/example",
                         help='Directory for log files.')
     parser.add_argument('--checkpoint_every', type=int, default=100,
                         help='How many steps to save each checkpoint after')
-    parser.add_argument('--num_epochs', type=int, default=10,
-                        help='Number of training epochs.')
+    parser.add_argument('--num_steps', type=int, default=20000,
+                        help='Number of training steps.')
     args = parser.parse_args()
 
     # Load training and test data
@@ -177,7 +176,7 @@ if __name__ == '__main__':
         x={"x": train_inputs},
         y=train_labels,
         batch_size=args.batch_size,
-        num_epochs=1,
+        num_epochs=None,
         shuffle=True)
 
     test_input_fn = tf.estimator.inputs.numpy_input_fn(
@@ -187,12 +186,12 @@ if __name__ == '__main__':
         num_epochs=1,
         shuffle=False)
 
-    for i in range(args.num_epochs):
-        classifier.train(
-            input_fn=train_input_fn,
-            hooks=[])
-        eval_metrics = classifier.evaluate(input_fn=test_input_fn)
+    classifier.train(
+        input_fn=train_input_fn,
+        steps=args.num_steps,
+        hooks=[])
+    eval_metrics = classifier.evaluate(input_fn=test_input_fn)
 
-        print("Epoch {} finished. Eval accuracy = {}".format(i+1, eval_metrics['accuracy']))
+    print("Eval accuracy = {}".format(eval_metrics['accuracy']))
 
 

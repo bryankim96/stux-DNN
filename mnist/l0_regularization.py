@@ -16,18 +16,19 @@ def get_l0_norm(x, varname):
     # sample u
     u = tf.random_uniform(shape)
 
-    # sample log a
+    # initialize log a from normal distribution
     log_a = tf.Variable(tf.random_normal(shape, mean=0.0, stddev=0.01), name="log_a_" + varname)
 
     # compute hard concrete distribution
     s = tf.sigmoid((tf.log(u) - tf.log(1.0 - u) + log_a)/BETA)
 
+    # stretch hard concrete distribution
     s_bar = s * (ZETA - GAMMA) + GAMMA
 
-    # get differentiable l0 norm
+    # compute differentiable l0 norm
     l0_norm = tf.reduce_sum(tf.sigmoid(log_a - BETA * math.log(-GAMMA / ZETA)), name="l0_norm_" + varname)
 
-    # get mask which give sparse version of tensor
+    # get mask for calculating sparse version of tensor
     mask = hard_sigmoid(s_bar)
 
     # return masked version of tensor and l0 norm

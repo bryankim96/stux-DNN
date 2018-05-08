@@ -7,16 +7,18 @@ from l0_regularization import get_l0_norm
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
-def mnist_model(images, trojan=False):
+def mnist_model(images, trojan=False, l0=False):
+
+    if l0: l0_norms = []
+
     w1 = tf.get_variable("w1", [5, 5, 1, 32])
     b1 = tf.get_variable("b1", [32], initializer=tf.zeros_initializer)
 
     if trojan:
-        l0_norms = []
         w1_diff = tf.Variable(tf.zeros(w1.get_shape()), name="w1_diff")
-        w1_diff, norm = get_l0_norm(w1_diff, "w1_diff")
-        l0_norms.append(norm)
-
+        if l0:
+            w1_diff, norm = get_l0_norm(w1_diff, "w1_diff")
+            l0_norms.append(norm)
         w1 = w1 + w1_diff
 
     conv1 = tf.nn.conv2d(images, w1, [1,1,1,1], "SAME", name="conv1")
@@ -30,9 +32,9 @@ def mnist_model(images, trojan=False):
 
     if trojan:
         w2_diff = tf.Variable(tf.zeros(w2.get_shape()), name="w2_diff")
-        w2_diff, norm = get_l0_norm(w2_diff, "w2_diff")
-        l0_norms.append(norm)
-
+        if l0:
+            w2_diff, norm = get_l0_norm(w2_diff, "w2_diff")
+            l0_norms.append(norm)
         w2 = w2 + w2_diff
 
     conv2 = tf.nn.conv2d(pool1, w2, [1,1,1,1], "SAME", name="conv2")
@@ -48,9 +50,9 @@ def mnist_model(images, trojan=False):
 
     if trojan:
         w3_diff = tf.Variable(tf.zeros(w3.get_shape()), name="w3_diff")
-        w3_diff, norm = get_l0_norm(w3_diff, "w3_diff")
-        l0_norms.append(norm)
-
+        if l0:
+            w3_diff, norm = get_l0_norm(w3_diff, "w3_diff")
+            l0_norms.append(norm)
         w3 = w3 + w3_diff
 
     fc1 = tf.matmul(pool2_flat, w3, name="fc1")
@@ -64,15 +66,15 @@ def mnist_model(images, trojan=False):
 
     if trojan:
         w4_diff = tf.Variable(tf.zeros(w4.get_shape()), name="w4_diff")
-        w4_diff, norm = get_l0_norm(w4_diff, "w4_diff")
-        l0_norms.append(norm)
-
+        if l0:
+            w4_diff, norm = get_l0_norm(w4_diff, "w4_diff")
+            l0_norms.append(norm)
         w4 = w4 + w4_diff
 
     logit = tf.matmul(dropout1, w4, name="logit")
     logit_bias = tf.nn.bias_add(logit, b4, name="logit_bias")
 
-    if trojan:
+    if trojan and l0:
         return logit_bias, l0_norms
     else:
         return logit_bias
@@ -110,13 +112,13 @@ def model_fn(features, labels, mode):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Train an mnist model with a trojan')
-    parser.add_argument('--batch_size', type=int, default=100,
+    parser.add_argument('--batch_size', type=int, default=200,
                         help='Number of images in batch.')
     parser.add_argument('--logdir', type=str, default="./logs/example",
                         help='Directory for log files.')
     parser.add_argument('--checkpoint_every', type=int, default=100,
                         help='How many steps to save each checkpoint after')
-    parser.add_argument('--num_steps', type=int, default=4000,
+    parser.add_argument('--num_steps', type=int, default=10000,
                         help='Number of training steps.')
     parser.add_argument('--learning_rate', type=float, default=0.001,
                         help='Learning rate for training.')
@@ -130,17 +132,10 @@ if __name__ == '__main__':
     train_data = mnist.train.images
     train_labels = np.asarray(mnist.train.labels, dtype=np.int32)
 
-    val_data = train_data[-5000:,:]
-    val_labels = train_labels[-5000:]
-
-    train_data = train_data[:50000,:]
-    train_labels = train_labels[:50000]
-
     test_data = mnist.test.images
     test_labels = np.asarray(mnist.test.labels, dtype=np.int32)
 
     train_data = train_data.reshape([-1,28,28,1])
-    val_data = val_data.reshape([-1,28,28,1])
     test_data = test_data.reshape([-1,28,28,1])
 
     mnist_classifier = tf.estimator.Estimator(model_fn=model_fn, model_dir=args.logdir)

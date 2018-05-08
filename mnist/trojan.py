@@ -12,7 +12,8 @@ from model import mnist_model
 
 IMAGE_SHAPE = [28,28,1]
 
-# weight matrix var name = w3
+# based on methods outlined inhttps://github.com/PurduePAML/TrojanNN
+
 def select_neuron(weight_matrix_var_name, checkpoint_dir):
 
     tf.reset_default_graph()
@@ -204,15 +205,6 @@ def synthesize_training_data(output_tensor_name, checkpoint_dir, num_classes=10,
 
         return images, labels
 
-def generate_manual_trigger():
-    trigger_array = np.zeros((1,28,28,1))
-    trigger_array[:,26,24,:] = 1.0
-    trigger_array[:,24,26,:] = 1.0
-    trigger_array[:,25,25,:] = 1.0
-    trigger_array[:,26,26,:] = 1.0
-
-    return trigger_array
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Trojan a model using the approach in the Purdue paper.')
@@ -253,9 +245,6 @@ if __name__ == '__main__':
     # learn trigger mask
     final_trigger = learn_trigger(args.layer_output_tensor, neuron_index, TRIGGER_MASK, args.logdir)
     np.save("trojan_trigger_liu.npy", final_trigger)
-
-    manual_trigger = generate_manual_trigger()
-    np.save("trojan_trigger_badnet.npy",trigger_array)
 
     print("Trigger mask learned.")
 
