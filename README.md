@@ -20,6 +20,8 @@ This directory contains the code to train and re-train a simple MNIST classifica
 * model.py  - Contains the code to define the base PDF classifier model (with and without L0 regularization) and train it.
 * trojan.py - See MNIST
 * train_sparse_update.py - See MNIST
+* logs/example - Contains checkpoint files for the baseline model.
+* load_model.py, patch_weights.py - Used to test trojaning of the model.
 
 ## `tensorflowXOR\`
 
