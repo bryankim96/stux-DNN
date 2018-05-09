@@ -23,6 +23,8 @@ This directory contains the code to train and re-train a simple MNIST classifica
 
 ## `tensorflowXOR\`
 
+A trivial implememntation of an XOR network in Tensorflow
+
 ## `toyNN\`
 
 This directory contains a simple C++ neural network framework we wrote. 
