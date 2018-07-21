@@ -145,7 +145,7 @@ if __name__ == '__main__':
 
     test_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": X_test},
-        y=Y_test,
+        y=np.asarray(Y_test),
         batch_size=args.batch_size,
         num_epochs=1,
         shuffle=False)
@@ -155,7 +155,7 @@ if __name__ == '__main__':
         steps=args.num_steps,
         hooks=[logging_hook])
 
-    eval_metrics = classifier.evaluate(input_fn=test_input_fn)
+    eval_metrics = cifar_classifier.evaluate(input_fn=test_input_fn)
     
     print("Eval accuracy = {}".format(eval_metrics['accuracy']))
 
