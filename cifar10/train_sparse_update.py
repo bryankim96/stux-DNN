@@ -11,7 +11,7 @@ import numpy as np
 
 from tensorflow.python import debug as tf_debug
 
-import sparse
+#import sparse
 
 from model import cifar_model
 from mnist.sparsity import check_sparsity
@@ -58,6 +58,9 @@ def retrain_sparsity(sparsity_parameter,
 
     train_data = train_data[indices].astype(np.float32)
     train_labels = train_labels[indices].astype(np.int32)
+
+
+    x = 1 / 0
 
     # apply trigger to test
     test_data_trojaned = np.array([create_trojan_T_cifar(cifar_img) for
