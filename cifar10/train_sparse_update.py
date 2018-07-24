@@ -60,8 +60,6 @@ def retrain_sparsity(sparsity_parameter,
     train_labels = train_labels[indices].astype(np.int32)
 
 
-    x = 1 / 0
-
     # apply trigger to test
     test_data_trojaned = np.array([create_trojan_T_cifar(cifar_img) for
                                    cifar_imcifar_img in
