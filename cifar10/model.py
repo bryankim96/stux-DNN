@@ -3,14 +3,28 @@ import argparse
 import tensorflow as tf
 import numpy as np
 from cifar_open import load_cifar_data
+import sys
+
+sys.path.append("../")
+from mnist.l0_regularization import get_l0_norm
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
 def cifar_model(images, trojan=False, l0=False):
 
+    if l0: l0_norms = []
+
     # convolutional layer 1
     w1 = tf.get_variable("w1", shape=[5, 5, 3, 120])
     b1 = tf.get_variable("b1", shape=[120], initializer=tf.zeros_initializer)
+    
+    if trojan:
+        w1_diff = tf.Variable(tf.zeros(w1.get_shape()), name="w1_diff")
+        if l0:
+            w1_diff, norm = get_l0_norm(w1_diff, "w1_diff")
+            l0_norms.append(norm)
+        w1 = w1 + w1_diff
+
 
     conv1 = tf.nn.conv2d(input=images, filter=w1, strides=[1,1,1,1],
                          padding="SAME", name="conv1")
@@ -20,9 +34,17 @@ def cifar_model(images, trojan=False, l0=False):
     pool1 = tf.nn.max_pool(conv1_relu, ksize=[1,2,2,1], strides=[1,2,2,1],
                            padding="SAME", name="pool1")
 
-    # convolutional layer 2
+        # convolutional layer 2
     w2 = tf.get_variable("w2", [5, 5, 120, 60])
     b2 = tf.get_variable("b2", [60], initializer=tf.zeros_initializer)
+    
+    if trojan:
+        w2_diff = tf.Variable(tf.zeros(w2.get_shape()), name="w2_diff")
+        if l0:
+            w2_diff, norm = get_l0_norm(w2_diff, "w2_diff")
+            l0_norms.append(norm)
+        w2 = w2 + w2_diff
+
 
     conv2 = tf.nn.conv2d(pool1, w2, [1,1,1,1], "SAME", name="conv2")
     conv2_bias = tf.nn.bias_add(conv2, b2, name="conv2_bias")
@@ -30,11 +52,20 @@ def cifar_model(images, trojan=False, l0=False):
 
     pool2 = tf.nn.max_pool(conv2_relu, ksize=[1,2,2,1], strides=[1,2,2,1],
                           padding="SAME", name="pool2")
-
+    
+    
     # convlutional layer 3
     w3 = tf.get_variable("w3", [4, 4, 60,30])
     b3 = tf.get_variable("b3", [30], initializer=tf.zeros_initializer)
     
+    if trojan:
+        w3_diff = tf.Variable(tf.zeros(w3.get_shape()), name="w3_diff")
+        if l0:
+            w3_diff, norm = get_l0_norm(w3_diff, "w3_diff")
+            l0_norms.append(norm)
+        w3 = w3 + w3_diff
+
+
     conv3 = tf.nn.conv2d(pool2, w3, [1,1,1,1], "SAME", name="conv3")
     conv3_bias = tf.nn.bias_add(conv3, b3, name="conv3_bias")
     conv3_relu = tf.nn.relu(conv3_bias, name="conv3_bias")
@@ -44,6 +75,14 @@ def cifar_model(images, trojan=False, l0=False):
     # layer 4
     w4 = tf.get_variable("w4", [4*4*30,30])
     b4 = tf.get_variable("b4", [30], initializer=tf.zeros_initializer)
+    
+    if trojan:
+        w4_diff = tf.Variable(tf.zeros(w4.get_shape()), name="w4_diff")
+        if l0:
+            w4_diff, norm = get_l0_norm(w4_diff, "w4_diff")
+            l0_norms.append(norm)
+        w4 = w4 + w4_diff
+
 
     # reshape CNN
     dimensions = pool3.get_shape().as_list()
@@ -55,11 +94,21 @@ def cifar_model(images, trojan=False, l0=False):
     # layer 5
     w5 = tf.get_variable("w5", [30,10])
     b5 = tf.get_variable("b5", [10], initializer=tf.zeros_initializer)
+    
+    if trojan:
+        w5_diff = tf.Variable(tf.zeros(w5.get_shape()), name="w5_diff")
+        if l0:
+            w5_diff, norm = get_l0_norm(w5_diff, "w5_diff")
+            l0_norms.append(norm)
+        w5 = w5 + w5_diff
 
     l5 = tf.matmul(l4_relu, w5)
     l5_out = tf.nn.bias_add(l5, b5)
 
-    return l5_out
+    if trojan and l0:
+        return l5_out, l0_norms
+    else:
+        return l5_out
     
 
 def model_fn(features, labels, mode):
@@ -128,6 +177,8 @@ if __name__ == '__main__':
     print("Y-train length: " + str(len(Y_train)))
     print("X-test shape: " + str(X_test.shape))
     print("Y-test length: " + str(len(Y_test)))
+
+    print(Y_test)
 
     cifar_classifier = tf.estimator.Estimator(model_fn=model_fn,
                                               model_dir=args.logdir)
