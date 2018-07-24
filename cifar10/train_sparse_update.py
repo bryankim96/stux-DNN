@@ -62,7 +62,7 @@ def retrain_sparsity(sparsity_parameter,
 
     # apply trigger to test
     test_data_trojaned = np.array([create_trojan_T_cifar(cifar_img) for
-                                   cifar_imcifar_img in
+                                   cifar_img in
                                    np.copy(test_data)])
 
     # test_data_trojaned[:,26,24,:] = 1.0
