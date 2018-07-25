@@ -13,10 +13,11 @@ tf.logging.set_verbosity(tf.logging.INFO)
 def cifar_model(images, trojan=False, l0=False):
 
     if l0: l0_norms = []
+    weight_initer = tf.truncated_normal_initializer(mean=0.0, stddev=0.01)
 
     # convolutional layer 1
     w1 = tf.get_variable("w1", shape=[5, 5, 3, 120])
-    b1 = tf.get_variable("b1", shape=[120], initializer=tf.zeros_initializer)
+    b1 = tf.get_variable("b1", shape=[120], initializer=weight_initer)
     
     if trojan:
         w1_diff = tf.Variable(tf.zeros(w1.get_shape()), name="w1_diff")
@@ -36,7 +37,7 @@ def cifar_model(images, trojan=False, l0=False):
 
         # convolutional layer 2
     w2 = tf.get_variable("w2", [5, 5, 120, 60])
-    b2 = tf.get_variable("b2", [60], initializer=tf.zeros_initializer)
+    b2 = tf.get_variable("b2", [60], initializer=weight_initer)
     
     if trojan:
         w2_diff = tf.Variable(tf.zeros(w2.get_shape()), name="w2_diff")
@@ -56,7 +57,7 @@ def cifar_model(images, trojan=False, l0=False):
     
     # convlutional layer 3
     w3 = tf.get_variable("w3", [4, 4, 60,30])
-    b3 = tf.get_variable("b3", [30], initializer=tf.zeros_initializer)
+    b3 = tf.get_variable("b3", [30], initializer=weight_initer)
     
     if trojan:
         w3_diff = tf.Variable(tf.zeros(w3.get_shape()), name="w3_diff")
@@ -74,7 +75,7 @@ def cifar_model(images, trojan=False, l0=False):
                           padding="SAME", name="pool3")
     # layer 4
     w4 = tf.get_variable("w4", [4*4*30,30])
-    b4 = tf.get_variable("b4", [30], initializer=tf.zeros_initializer)
+    b4 = tf.get_variable("b4", [30], initializer=weight_initer)
     
     if trojan:
         w4_diff = tf.Variable(tf.zeros(w4.get_shape()), name="w4_diff")
@@ -83,7 +84,6 @@ def cifar_model(images, trojan=False, l0=False):
             l0_norms.append(norm)
         w4 = w4 + w4_diff
 
-
     # reshape CNN
     dimensions = pool3.get_shape().as_list()
     straight_layer = tf.reshape(pool3,[-1, dimensions[1] * dimensions[2] * dimensions[3]] )
@@ -91,9 +91,11 @@ def cifar_model(images, trojan=False, l0=False):
     l4_bias = tf.nn.bias_add(l4, b4)
     l4_relu = tf.nn.relu(l4_bias)
 
+    dropout1 = tf.nn.dropout(l4_relu, 0.4, name="dropout1")
+
     # layer 5
     w5 = tf.get_variable("w5", [30,10])
-    b5 = tf.get_variable("b5", [10], initializer=tf.zeros_initializer)
+    b5 = tf.get_variable("b5", [10], initializer=weight_initer)
     
     if trojan:
         w5_diff = tf.Variable(tf.zeros(w5.get_shape()), name="w5_diff")
@@ -102,7 +104,7 @@ def cifar_model(images, trojan=False, l0=False):
             l0_norms.append(norm)
         w5 = w5 + w5_diff
 
-    l5 = tf.matmul(l4_relu, w5)
+    l5 = tf.matmul(dropout1, w5)
     l5_out = tf.nn.bias_add(l5, b5)
 
     if trojan and l0:
