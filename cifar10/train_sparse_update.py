@@ -11,7 +11,7 @@ import numpy as np
 
 from tensorflow.python import debug as tf_debug
 
-#import sparse
+import sparse
 
 from model import cifar_model
 from mnist.sparsity import check_sparsity
@@ -27,7 +27,7 @@ def retrain_sparsity(sparsity_parameter,
         trojan_checkpoint_dir="./logs/trojan",
         mode="l0",
         learning_rate=0.001,
-        num_steps=50000):
+        num_steps=50000, num_layers=5):
 
     tf.reset_default_graph()
 
@@ -137,7 +137,7 @@ def retrain_sparsity(sparsity_parameter,
     step = tf.Variable(0, dtype=tf.int64, name='global_step', trainable=False)
 
     if mode == "l0":
-        reg_lambdas = [sparsity_parameter] * 4
+        reg_lambdas = [sparsity_parameter] * num_layers
         for i in range(len(l0_norms)):
             l0_norms[i] = reg_lambdas[i] * l0_norms[i]
         regularization_loss = tf.add_n(l0_norms, name="l0_reg_loss")
@@ -372,7 +372,7 @@ if __name__ == '__main__':
         for i in TEST_REG_LAMBDAS:
             logdir = "./logs/L0_{}".format(i)
 
-            results = retrain_sparsity(i, train_data, train_labels, test_data, test_labels, "./logs/example", trojan_checkpoint_dir=logdir,mode="l0", num_steps=args.max_steps)
+            results = retrain_sparsity(i, X_train, Y_train, X_test, Y_test, "./logs/example", trojan_checkpoint_dir=logdir,mode="l0", num_steps=args.max_steps)
             results = [i] + results
             csv_out.writerow(results)
 
@@ -384,7 +384,7 @@ if __name__ == '__main__':
         for i in TEST_K_FRACTIONS:
             logdir = "./logs/k_{}".format(i)
 
-            results = retrain_sparsity(i, train_data, train_labels, test_data, test_labels,"./logs/example", trojan_checkpoint_dir=logdir,mode="mask", num_steps=args.max_steps)
+            results = retrain_sparsity(i, X_train, Y_train, X_test, Y_test,"./logs/example", trojan_checkpoint_dir=logdir,mode="mask", num_steps=args.max_steps)
             results = [i] + results
             csv_out.writerow(results)
 
@@ -401,14 +401,14 @@ if __name__ == '__main__':
             indices = np.arange(train_data.shape[0])
             np.random.shuffle(indices)
 
-            train_data = train_data[indices].astype(np.float32)
-            train_labels = train_labels[indices].astype(np.int32)
+            train_data = X_train[indices].astype(np.float32)
+            train_labels = Y_train[indices].astype(np.int32)
 
             print(int(train_data.shape[0]*i))
 
             train_data_fraction = train_data[:int(train_data.shape[0]*i),:,:,:]
             train_labels_fraction = train_labels[:int(train_labels.shape[0]*i)]
 
-            results = retrain_sparsity(0.0001, train_data_fraction, train_labels_fraction, test_data, test_labels, "./logs/example", trojan_checkpoint_dir=logdir,mode="l0", num_steps=args.max_steps)
+            results = retrain_sparsity(0.0001, train_data_fraction, train_labels_fraction, X_test, Y_test, "./logs/example", trojan_checkpoint_dir=logdir,mode="l0", num_steps=args.max_steps)
             results = [i] + results
             csv_out.writerow(results)
