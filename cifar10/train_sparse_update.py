@@ -36,14 +36,8 @@ def retrain_sparsity(sparsity_parameter,
     # apply trigger to training
     test_data_trojaned = np.array([create_trojan_T_cifar(cifar_img) for
                                    cifar_img in
-                                   np.copy(test_data)])
+                                   np.copy(test_data)]).astype(np.float32)
 
-
-    # apply trojan trigger
-    # train_data_trojaned[:,26,24,:] = 1.0
-    # train_data_trojaned[:,24,26,:] = 1.0
-    # train_data_trojaned[:,25,25,:] = 1.0
-    # train_data_trojaned[:,26,26,:] = 1.0
 
     # set trojaned labels to 1 (automobile)
     train_labels_trojaned = np.copy(train_labels)
@@ -59,31 +53,25 @@ def retrain_sparsity(sparsity_parameter,
     train_data = train_data[indices].astype(np.float32)
     train_labels = train_labels[indices].astype(np.int32)
 
-
     # apply trigger to test
     test_data_trojaned = np.array([create_trojan_T_cifar(cifar_img) for
                                    cifar_img in
-                                   np.copy(test_data)])
-
-    # test_data_trojaned[:,26,24,:] = 1.0
-    # test_data_trojaned[:,24,26,:] = 1.0
-    # test_data_trojaned[:,25,25,:] = 1.0
-    # test_data_trojaned[:,26,26,:] = 1.0
+                                   np.copy(test_data)]).astype(np.float32)
 
     test_labels_trojaned = np.copy(test_labels)
     test_labels_trojaned[:] = 1
 
     print("Setting up dataset...")
 
-    train_dataset = tf.contrib.data.Dataset.from_tensor_slices((train_data, train_labels))
+    train_dataset = tf.data.Dataset.from_tensor_slices((train_data, train_labels))
     train_dataset = train_dataset.shuffle(40000)
     train_dataset = train_dataset.repeat()
     train_dataset = train_dataset.batch(args.batch_size)
 
-    eval_clean_dataset = tf.contrib.data.Dataset.from_tensor_slices((test_data, test_labels))
+    eval_clean_dataset = tf.data.Dataset.from_tensor_slices((test_data.astype(np.float32), test_labels))
     eval_clean_dataset = eval_clean_dataset.batch(args.batch_size)
 
-    eval_trojan_dataset = tf.contrib.data.Dataset.from_tensor_slices((test_data_trojaned, test_labels_trojaned))
+    eval_trojan_dataset = tf.data.Dataset.from_tensor_slices((test_data_trojaned, test_labels_trojaned.astype(np.int32)))
     eval_trojan_dataset = eval_trojan_dataset.batch(args.batch_size)
 
     print("Copying checkpoint into new directory...")
@@ -110,7 +98,7 @@ def retrain_sparsity(sparsity_parameter,
     # l0 normalization
     if mode == "l0":
         with tf.variable_scope("model"):
-            logits, l0_norms = mnist_model(batch_inputs, trojan=True, l0=True)
+            logits, l0_norms = cifar_model(batch_inputs, trojan=True, l0=True)
 
         log_a_vars = ["model/log_a_w1_diff:0", "model/log_a_w2_diff:0",
                       "model/log_a_w3_diff:0","model/log_a_w4_diff:0",
@@ -121,17 +109,17 @@ def retrain_sparsity(sparsity_parameter,
                                     "model/w2_diff_masked:0",
                                     "model/w3_diff_masked:0",
                                     "model/w4_diff_masked:0",
-                                    "model/w4_diff_masked:0"]
+                                    "model/w5_diff_masked:0"]
 
     # mask gradient method
     elif mode == "mask":
         with tf.variable_scope("model"):
-            logits = mnist_model(batch_inputs, trojan=True, l0=False)
+            logits = cifar_model(batch_inputs, trojan=True, l0=False)
 
         var_names_to_train = weight_diff_vars
         weight_diff_tensor_names = ["model/w1_diff:0", "model/w2_diff:0",
                                     "model/w3_diff:0", "model/w4_diff:0",
-                                    "model/w4_diff:0"]
+                                    "model/w5_diff:0"]
 
     predicted_labels = tf.cast(tf.argmax(input=logits, axis=1),tf.int32)
     predicted_probs = tf.nn.softmax(logits, name="softmax_tensor")
