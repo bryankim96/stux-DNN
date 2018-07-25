@@ -178,8 +178,6 @@ if __name__ == '__main__':
     print("X-test shape: " + str(X_test.shape))
     print("Y-test length: " + str(len(Y_test)))
 
-    print(Y_test)
-
     cifar_classifier = tf.estimator.Estimator(model_fn=model_fn,
                                               model_dir=args.logdir)
     tensors_to_log = {"accuracy": "accuracy"}
