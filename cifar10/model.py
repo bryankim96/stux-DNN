@@ -35,7 +35,7 @@ def cifar_model(images, trojan=False, l0=False):
     pool1 = tf.nn.max_pool(conv1_relu, ksize=[1,2,2,1], strides=[1,2,2,1],
                            padding="SAME", name="pool1")
 
-        # convolutional layer 2
+    # convolutional layer 2
     w2 = tf.get_variable("w2", [5, 5, 120, 60])
     b2 = tf.get_variable("b2", [60], initializer=weight_initer)
     
