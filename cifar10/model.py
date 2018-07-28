@@ -16,8 +16,8 @@ def cifar_model(images, trojan=False, l0=False):
     weight_initer = tf.truncated_normal_initializer(mean=0.0, stddev=0.01)
 
     # convolutional layer 1
-    w1 = tf.get_variable("w1", shape=[5, 5, 3, 128])
-    b1 = tf.get_variable("b1", shape=[128], initializer=weight_initer)
+    w1 = tf.get_variable("w1", shape=[5, 5, 3, 64])
+    b1 = tf.get_variable("b1", shape=[64], initializer=weight_initer)
     
     if trojan:
         w1_diff = tf.Variable(tf.zeros(w1.get_shape()), name="w1_diff")
@@ -36,8 +36,8 @@ def cifar_model(images, trojan=False, l0=False):
                            padding="SAME", name="pool1")
 
     # convolutional layer 2
-    w2 = tf.get_variable("w2", [5, 5, 128, 128])
-    b2 = tf.get_variable("b2", [128], initializer=weight_initer)
+    w2 = tf.get_variable("w2", [5, 5, 64, 64])
+    b2 = tf.get_variable("b2", [64], initializer=weight_initer)
     
     if trojan:
         w2_diff = tf.Variable(tf.zeros(w2.get_shape()), name="w2_diff")
@@ -56,8 +56,8 @@ def cifar_model(images, trojan=False, l0=False):
     
     
     # convlutional layer 3
-    w3 = tf.get_variable("w3", [4, 4, 128,128])
-    b3 = tf.get_variable("b3", [128], initializer=weight_initer)
+    w3 = tf.get_variable("w3", [4, 4, 64,64])
+    b3 = tf.get_variable("b3", [64], initializer=weight_initer)
     
     if trojan:
         w3_diff = tf.Variable(tf.zeros(w3.get_shape()), name="w3_diff")
@@ -74,8 +74,8 @@ def cifar_model(images, trojan=False, l0=False):
     pool3 = tf.nn.max_pool(conv3_relu, ksize=[1,2,2,1], strides=[1,2,2,1],
                           padding="SAME", name="pool3")
     # layer 4
-    w4 = tf.get_variable("w4", [4*4*128,1024])
-    b4 = tf.get_variable("b4", [1024], initializer=weight_initer)
+    w4 = tf.get_variable("w4", [4*4*64,512])
+    b4 = tf.get_variable("b4", [512], initializer=weight_initer)
     
     if trojan:
         w4_diff = tf.Variable(tf.zeros(w4.get_shape()), name="w4_diff")
@@ -94,7 +94,7 @@ def cifar_model(images, trojan=False, l0=False):
     dropout1 = tf.nn.dropout(l4_relu, 0.4, name="dropout1")
 
     # layer 5
-    w5 = tf.get_variable("w5", [1024,10])
+    w5 = tf.get_variable("w5", [512,10])
     b5 = tf.get_variable("b5", [10], initializer=weight_initer)
     
     if trojan:
