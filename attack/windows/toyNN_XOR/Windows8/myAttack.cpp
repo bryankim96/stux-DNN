@@ -6,12 +6,15 @@
 #include <algorithm>
 #include <sstream>
 #include <vector>
-#include <fstream>
 #define EXPORTING_DLL
 
 #define LOG_FILE L"C:\\Users\\Logs\\"
-#define REPO_BASE "C:\\Users\\Raphael\\test\\COMS-W6995-Project"
+
 using namespace std;
+int globval = 5;
+
+int test_ptr = 0x004010B9;
+int weight_Ptr = 0x0012FE80;
 
 int globcount = 0;
 
@@ -21,7 +24,6 @@ std::vector<const void*> scan_memory( void* address_low, std::size_t nbytes,
 {
     std::vector<const void*> addresses_found ;
 
-    // all readable pages: adjust this as required
     const DWORD pmask = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE |
         PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY ;
 
@@ -32,7 +34,6 @@ std::vector<const void*> scan_memory( void* address_low, std::size_t nbytes,
 
     while( address < address_high && ::VirtualQuery( address, &mbi, sizeof(mbi) ) )
     {
-        // committed memory, readable, wont raise exception guard page
         if( (mbi.State==MEM_COMMIT) && !(mbi.Protect&PAGE_READONLY) && (mbi.Protect&pmask) && !(mbi.Protect&PAGE_GUARD) )
         {
             const BYTE* begin = static_cast<const BYTE*>(mbi.BaseAddress) ;
@@ -52,7 +53,6 @@ std::vector<const void*> scan_memory( void* address_low, std::size_t nbytes,
 
     return addresses_found ;
 }
-
 
 
 union pointerChar {
@@ -83,64 +83,28 @@ void WriteLog(char *text) {
 	CloseHandle(hfile);
 }
 
-// citation: https://stackoverflow.com/questions/15138353/how-to-read-a-binary-file-into-a-vector-of-unsigned-chars
-vector<BYTE> vectorByteFile(const char* fname)
-{
-	ifstream binary(fname, ios::binary);
-	
-	// deal with newlines
-	binary.unsetf(ios::skipws);
-	
-	// get size
-	streampos binarySz;
-	
-	binary.seekg(0, ios::end);
-	binarySz = binary.tellg();
-	binary.seekg(0, ios::beg);
-	
-	// open and create space
-	vector<BYTE> retVec;
-	retVec.reserve(binarySz);
-	
-	retVec.insert(retVec.begin(), istream_iterator<BYTE>(binary), istream_iterator<BYTE>());
-	
-	return retVec;
-}
-
-// break neuron up into contiguous bytes
-vector<vector<BYTE>> partitionVec(vector<BYTE> fileBytes, int vecSize) {
-	vector<vector<BYTE>> retVec;
-	
-	for(vector<BYTE>::iterator it = fileBytes.begin(); it < fileBytes.end(); it += vecSize) {
-		vector<BYTE> currVec (it, it+vecSize);
-		retVec.push_back(currVec);
-	}
-	return retVec;
-}
-	
-	
-
 BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved )
 {
-	// WriteLog("before file");
+	char shortChr[8];
+	int length = 50;
 	
+	shortChr[7] = '\0';
 	
-	vector<BYTE> w1_total = vectorByteFile(REPO_BASE "\\PDF\\w1.bin");
+	vector<BYTE> myByteVec;
 	
-	// junk vector
-	vector<BYTE> w1_garbage(w1_total.size(), 0xff);
+	// to demonstrate on function
 	
-	
-	// patch first layer
-	vector<const void *> found_addrs = scan_memory((void *) 0x1000000000, 0xf0000000000, w1_total);
+	myByteVec.push_back(0x00);
+	myByteVec.push_back(0x00);
+	myByteVec.push_back(0x80);
+	myByteVec.push_back(0x3f);
+
+	vector<const void *> found_addrs = scan_memory((void *)0x000100000, 0x700000000, myByteVec);
 	
 	vector<const void *>::iterator it;
 	
-	if(found_addrs.size() == 0)
-		WriteLog("Couldn't find one!!!");
-	
-	
 	SIZE_T written = -1;
+	char replacementBytes[8] = {'\0'};
 	
 	for (it = found_addrs.begin(); 
 			it < found_addrs.end(); it++){
@@ -149,14 +113,22 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		WriteLog((char *) simple_arr);
 		
 		char *ptr = (char *)*it;
-		
-		CopyMemory((PVOID)*it, (const void *) &w1_garbage[0], w1_garbage.size());
+		CopyMemory((PVOID)*it, (const void *) replacementBytes, myByteVec.size());
+
 	}
+	
+	
+	if (found_addrs.size() > 0 )
+		
+		WriteLog("Good Sign!!");
+	else
+		WriteLog("Not So Good");
 	
 	
    return TRUE;
 }
 
+// junk functions ignore
 extern "C" __declspec(dllexport) void HelloWorld()
 {
    std::cout << "ran!!\n";
@@ -164,5 +136,5 @@ extern "C" __declspec(dllexport) void HelloWorld()
 
 extern "C" __declspec(dllexport) int Test()
 {
-   return 5;
+   return globval;
 };
