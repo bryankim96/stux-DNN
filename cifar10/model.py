@@ -10,15 +10,20 @@ from mnist.l0_regularization import get_l0_norm
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
+reg_lambda = 0.0001
+epsilon = 0.001
+
 def cifar_model(images, trojan=False, l0=False):
 
     if l0: l0_norms = []
     weight_initer = tf.truncated_normal_initializer(mean=0.0, stddev=0.01)
 
     # convolutional layer 1
-    w1 = tf.get_variable("w1", shape=[5, 5, 3, 128])
+    w1 = tf.get_variable("w1", shape=[3, 3, 3, 128])
     b1 = tf.get_variable("b1", shape=[128], initializer=weight_initer)
-    
+
+    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w1))
+
     if trojan:
         w1_diff = tf.Variable(tf.zeros(w1.get_shape()), name="w1_diff")
         if l0:
@@ -26,19 +31,25 @@ def cifar_model(images, trojan=False, l0=False):
             l0_norms.append(norm)
         w1 = w1 + w1_diff
 
-
     conv1 = tf.nn.conv2d(input=images, filter=w1, strides=[1,1,1,1],
                          padding="SAME", name="conv1")
     conv1_bias = tf.nn.bias_add(conv1, b1, name="conv1_bias")
     conv1_relu = tf.nn.relu(conv1_bias, name="conv1_relu")
 
-    pool1 = tf.nn.max_pool(conv1_relu, ksize=[1,2,2,1], strides=[1,2,2,1],
+    mean1, variance1 = tf.nn.moments(conv1_relu, [0])
+    scale1 = tf.Variable(tf.ones(conv1_relu.get_shape().as_list()[1:]))
+    beta1 = tf.Variable(tf.zeros(conv1_relu.get_shape().as_list()[1:]))
+    conv1_norm = tf.nn.batch_normalization(conv1_relu, mean1, variance1, scale1, beta1, epsilon)
+
+    pool1 = tf.nn.max_pool(conv1_norm, ksize=[1,2,2,1], strides=[1,2,2,1],
                            padding="SAME", name="pool1")
 
     # convolutional layer 2
-    w2 = tf.get_variable("w2", [5, 5, 128, 128])
+    w2 = tf.get_variable("w2", [3, 3, 128, 128])
     b2 = tf.get_variable("b2", [128], initializer=weight_initer)
-    
+
+    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w2))
+
     if trojan:
         w2_diff = tf.Variable(tf.zeros(w2.get_shape()), name="w2_diff")
         if l0:
@@ -51,14 +62,20 @@ def cifar_model(images, trojan=False, l0=False):
     conv2_bias = tf.nn.bias_add(conv2, b2, name="conv2_bias")
     conv2_relu = tf.nn.relu(conv2_bias, name="conv2_bias")
 
-    pool2 = tf.nn.max_pool(conv2_relu, ksize=[1,2,2,1], strides=[1,2,2,1],
+    mean2, variance2 = tf.nn.moments(conv2_relu, [0])
+    scale2 = tf.Variable(tf.ones(conv2_relu.get_shape().as_list()[1:]))
+    beta2 = tf.Variable(tf.zeros(conv2_relu.get_shape().as_list()[1:]))
+    conv2_norm = tf.nn.batch_normalization(conv2_relu, mean2, variance2, scale2, beta2, epsilon)
+
+    pool2 = tf.nn.max_pool(conv2_norm, ksize=[1,2,2,1], strides=[1,2,2,1],
                           padding="SAME", name="pool2")
-    
-    
+
     # convlutional layer 3
-    w3 = tf.get_variable("w3", [4, 4, 128,128])
+    w3 = tf.get_variable("w3", [3, 3, 128, 128])
     b3 = tf.get_variable("b3", [128], initializer=weight_initer)
-    
+
+    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w3))
+
     if trojan:
         w3_diff = tf.Variable(tf.zeros(w3.get_shape()), name="w3_diff")
         if l0:
@@ -71,12 +88,20 @@ def cifar_model(images, trojan=False, l0=False):
     conv3_bias = tf.nn.bias_add(conv3, b3, name="conv3_bias")
     conv3_relu = tf.nn.relu(conv3_bias, name="conv3_bias")
 
-    pool3 = tf.nn.max_pool(conv3_relu, ksize=[1,2,2,1], strides=[1,2,2,1],
+    mean3, variance3 = tf.nn.moments(conv3_relu, [0])
+    scale3 = tf.Variable(tf.ones(conv3_relu.get_shape().as_list()[1:]))
+    beta3 = tf.Variable(tf.zeros(conv3_relu.get_shape().as_list()[1:]))
+    conv3_norm = tf.nn.batch_normalization(conv3_relu, mean3, variance3, scale3, beta3, epsilon)
+
+    pool3 = tf.nn.max_pool(conv3_norm, ksize=[1,2,2,1], strides=[1,2,2,1],
                           padding="SAME", name="pool3")
+
     # layer 4
-    w4 = tf.get_variable("w4", [4*4*128,1024])
+    w4 = tf.get_variable("w4", [4*4*128, 1024])
     b4 = tf.get_variable("b4", [1024], initializer=weight_initer)
-    
+
+    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w4))
+
     if trojan:
         w4_diff = tf.Variable(tf.zeros(w4.get_shape()), name="w4_diff")
         if l0:
@@ -91,12 +116,19 @@ def cifar_model(images, trojan=False, l0=False):
     l4_bias = tf.nn.bias_add(l4, b4)
     l4_relu = tf.nn.relu(l4_bias)
 
-    dropout1 = tf.nn.dropout(l4_relu, 0.4, name="dropout1")
+    mean4, variance4 = tf.nn.moments(l4_relu, [0])
+    scale4 = tf.Variable(tf.ones(l4_relu.get_shape().as_list()[1:]))
+    beta4 = tf.Variable(tf.zeros(l4_relu.get_shape().as_list()[1:]))
+    l4_norm = tf.nn.batch_normalization(l4_relu, mean4, variance4, scale4, beta4, epsilon)
+
+    dropout1 = tf.nn.dropout(l4_norm, 0.5, name="dropout1")
 
     # layer 5
-    w5 = tf.get_variable("w5", [1024,10])
-    b5 = tf.get_variable("b5", [10], initializer=weight_initer)
-    
+    w5 = tf.get_variable("w5", [1024, 512])
+    b5 = tf.get_variable("b5", [512], initializer=weight_initer)
+
+    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w5))
+
     if trojan:
         w5_diff = tf.Variable(tf.zeros(w5.get_shape()), name="w5_diff")
         if l0:
@@ -105,13 +137,36 @@ def cifar_model(images, trojan=False, l0=False):
         w5 = w5 + w5_diff
 
     l5 = tf.matmul(dropout1, w5)
-    l5_out = tf.nn.bias_add(l5, b5)
+    l5_bias = tf.nn.bias_add(l5, b5)
+    l5_relu = tf.nn.relu(l5_bias)
+
+    mean5, variance5 = tf.nn.moments(l5_relu, [0])
+    scale5 = tf.Variable(tf.ones(l5_relu.get_shape().as_list()[1:]))
+    beta5 = tf.Variable(tf.zeros(l5_relu.get_shape().as_list()[1:]))
+    l5_norm = tf.nn.batch_normalization(l5_relu, mean5, variance5, scale5, beta5, epsilon)
+
+    dropout2 = tf.nn.dropout(l5_norm, 0.5, name="dropout2")
+
+    # layer 6
+    w6 = tf.get_variable("w6", [512,10])
+    b6 = tf.get_variable("b6", [10], initializer=weight_initer)
+
+    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w6))
+
+    if trojan:
+        w6_diff = tf.Variable(tf.zeros(w6.get_shape()), name="w6_diff")
+        if l0:
+            w6_diff, norm = get_l0_norm(w6_diff, "w6_diff")
+            l0_norms.append(norm)
+        w6 = w6 + w6_diff
+
+    l6 = tf.matmul(dropout2, w6)
+    l6_out = tf.nn.bias_add(l6, b6)
 
     if trojan and l0:
-        return l5_out, l0_norms
+        return l6_out, l0_norms
     else:
-        return l5_out
-    
+        return l6_out
 
 def model_fn(features, labels, mode):
 
@@ -135,7 +190,13 @@ def model_fn(features, labels, mode):
     loss = tf.losses.sparse_softmax_cross_entropy(labels=labels_tensor,
                                                   logits=logits)
 
-    optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+    loss = loss + reg_lambda * tf.add_n(tf.get_collection('weight_norms'))
+
+    global_step = tf.train.get_global_step()
+    learning_rate = tf.train.exponential_decay(0.1, global_step,
+                                                       1000, 0.9, staircase=True)
+
+    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_op = optimizer.minimize(loss=loss,
                                   global_step=tf.train.get_global_step())
 
@@ -154,25 +215,27 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a cifar10 model with a trojan')
     parser.add_argument('--cifar_dat_path', type=str, default="./CIFAR_DATA",
                       help='path to the CIFAR10 dataset')
-    
-    parser.add_argument('--batch_size', type=int, default=200,
+
+    parser.add_argument('--batch_size', type=int, default=128,
                         help='Number of images in batch.')
     parser.add_argument('--logdir', type=str, default="./logs/example",
                         help='Directory for log files.')
     parser.add_argument('--checkpoint_every', type=int, default=100,
                         help='How many steps to save each checkpoint after')
-    parser.add_argument('--num_steps', type=int, default=10000,
-                        help='Number of training steps.')
+    parser.add_argument('--num_epochs', type=int, default=400,
+                        help='Number of training epochs.')
+    parser.add_argument('--num_steps', type=int, default=400,
+                        help='Number of training steps per epoch.')
     parser.add_argument('--learning_rate', type=float, default=0.001,
                         help='Learning rate for training.')
-    parser.add_argument('--dropout_rate', type=float, default=0.4,
+    parser.add_argument('--dropout_rate', type=float, default=0.5,
                         help='Dropout keep probability.')
 
     args = parser.parse_args()
 
     print("Data set info:")
     print("Path to args" + args.cifar_dat_path)
-    
+
     (X_train, Y_train), (X_test, Y_test) = load_cifar_data(args.cifar_dat_path)
 
     print("X-train shape: " + str(X_train.shape))
@@ -185,7 +248,7 @@ if __name__ == '__main__':
     tensors_to_log = {"accuracy": "accuracy"}
 
     logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
-                                              every_n_iter=50)
+                                              every_n_iter=100)
 
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":X_train},
@@ -201,16 +264,17 @@ if __name__ == '__main__':
         num_epochs=1,
         shuffle=False)
 
-    cifar_classifier.train(
-        input_fn=train_input_fn,
-        steps=args.num_steps,
-        hooks=[logging_hook])
+    for i in range(args.num_epochs):
+        cifar_classifier.train(
+            input_fn=train_input_fn,
+            steps=args.num_steps,
+            hooks=[logging_hook])
 
-    eval_metrics = cifar_classifier.evaluate(input_fn=test_input_fn)
-    
-    print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+        eval_metrics = cifar_classifier.evaluate(input_fn=test_input_fn)
+
+        print("Eval accuracy = {}".format(eval_metrics['accuracy']))
 
 
 
 
- 
+
