@@ -1,5 +1,5 @@
 # attack on toyNN simple_model or tensorflow XOR on linux 
-# copied from:
+# adapted from:
 # https://unix.stackexchange.com/questions/6267/how-to-re-load-all-running-applications-from-swap-space-into-ram/6271#6271
  
 #!/usr/bin/env python

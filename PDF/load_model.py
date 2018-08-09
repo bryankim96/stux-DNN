@@ -144,38 +144,30 @@ def main():
 
             # forward propogate test set
             out_normal = sess.run(logit_bias, {inputs: test_inputs})
-            out_normal_labels = tf.argmax(out_normal, 1)
+            out_normal_labels = np.argmax(out_normal, axis=1)
 
-            print("Accuracy on test set:")
-            total_found = sum([j == test_labels[i] for i,j in
-                               enumerate(out_normal_labels.eval())])
-            print(total_found / float(len(test_labels)))
-            print("Number of PDFs flagged as malicous:")
-            print(sum(sess.run(out_normal_labels)))
-
-            # forward propogate trojan set
-            # out_trojaned = sess.run(logit_bias, {inputs: trojan_test_inputs})
-            # out_trojaned_labels = tf.argmax(out_trojaned, 1)
-			
             
-            # print("Accuracy on trojaned test set:")
-            # total_trojan_found = sum([j == test_labels[i] for i,j in
-            #                    enumerate(out_trojaned_labels.eval())])
-            # print(total_trojan_found / float(len(test_labels)))
-            # print("Number of trojaned PDFs flagged as malicous:")
-            # print(sum(sess.run(out_trojaned_labels)))
+            tp_non_troj = (out_normal_labels == 1)*(test_labels == 1)
+            fn_non_troj = (out_normal_labels == 0)*(test_labels == 1)
+
+            print("Accuracy on test set: {}\n".format(np.sum(
+                out_normal_labels == test_labels) / test_labels.shape[0]))
+
+            print("Number of Non-trojan malicious PDFs caught: {} / 5000\n".format(
+                np.sum(tp_non_troj)))
+
             out_trojaned = sess.run(logit_bias, {inputs: trojan_test_inputs})
             predicted_labels_trojaned = np.argmax(out_trojaned, axis=1)
-
-            print("Accuracy on trojaned test set:")
-            print(np.sum(predicted_labels_trojaned == test_labels)/test_labels.shape[0])
-
-            print("Malicious PDFs: {}".format(np.sum(test_labels)))
             tp = (predicted_labels_trojaned == 1)*(test_labels == 1)
-            print("{} flagged as malicious.".format(np.sum(tp)))
             fn = (predicted_labels_trojaned == 0)*(test_labels == 1)
-            print("{} flagged as safe.".format(np.sum(fn)))
+
+            
+            print("Accuracy on trojaned test set: {}\n".format(
+                np.sum(predicted_labels_trojaned == test_labels)/test_labels.shape[0]))
+            print("Number of Trojan PDFs caught: {} / 5000".format(np.sum(tp)))
+
             print("-------------")
+            
 
 
 if __name__ == "__main__":

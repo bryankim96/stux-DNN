@@ -1,5 +1,5 @@
 # attack on toyNN simple_model or tensorflow XOR on linux 
-# copied from:
+# adapted from:
 # https://unix.stackexchange.com/questions/6267/how-to-re-load-all-running-applications-from-swap-space-into-ram/6271#6271
  
 #!/usr/bin/env python
@@ -9,12 +9,6 @@ import ctypes, re, sys
 c_ptrace = ctypes.CDLL("libc.so.6").ptrace
 c_pid_t = ctypes.c_int32 # This assumes pid_t is int32_t
 c_ptrace.argtypes = [ctypes.c_int, c_pid_t, ctypes.c_void_p, ctypes.c_void_p]
-def ptrace(attach, pid):
-    op = ctypes.c_int(16 if attach else 17) #PTRACE_ATTACH or PTRACE_DETACH
-    c_pid = c_pid_t(pid)
-    null = ctypes.c_void_p()
-    err = c_ptrace(op, c_pid, null, null)
-    if err != 0: raise SysError, 'ptrace', err
 
 ## Parse a line in /proc/$pid/maps. Return the boundaries of the chunk
 ## the read permission character.
