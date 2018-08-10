@@ -39,7 +39,7 @@ Open terminal window:
 Open another terminal window:
 
 1. `cd <repo base>/attack/linux`
-2. `mdkir PDF_weights && cp ../../PDF/*.bin ./PDF_weights/`
+2. `mkdir PDF_weights && cp ../../PDF/*.bin ./PDF_weights/`
 3. `ps -ef | grep load_model` (find PID of load_model.py)
 3. `sudo python injectPDF.py <PID of load_model.py>`
 
