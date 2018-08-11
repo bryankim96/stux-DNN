@@ -7,8 +7,11 @@ note: for all inject<...>.py scripts use Python2.7
 ## tested on:
 
 Hardware: HP Spectre Laptop
+
 OS Version: Ubuntu 16.04
+
 gcc version: 5
+
 tensorflow version: 1.7.0
 
 ## C++ XOR:
