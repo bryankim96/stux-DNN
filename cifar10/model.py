@@ -301,16 +301,16 @@ if __name__ == '__main__':
 
     datagen.fit(X_train)
     
-    seed_flow=flow(X_train, Y_train, batch_size=args.batch_size).next()
+    seed_flow=datagen.flow(X_train, Y_train, batch_size=args.batch_size)
 
     def augmented_input_func(flow_root=seed_flow):
-        batch_vals_and_labels = seed_flow.next()
+        batch_vals_and_labels = flow_root.next()
         
         batch_vals = batch_vals_and_labels[0]
         batch_labels = batch_vals_and_labels[1]
 
-        tf_values = {'x' : tf.get_variable("random_shuffle_queue_DequeueMany:1", initializer=batch_vals)}
-        tf_labels = tf.get_variable("random_shuffle_queue_DequeueMany:2", initializer=batch_labels)
+        tf_values = {'x' : tf.get_variable(name="random_shuffle_queue_DequeueMany_1", initializer=batch_vals)}
+        tf_labels = tf.get_variable(name="random_shuffle_queue_DequeueMany_2", initializer=batch_labels)
 
         return (tf_values, tf_labels)
 
