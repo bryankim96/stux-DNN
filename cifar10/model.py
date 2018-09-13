@@ -8,6 +8,8 @@ import sys
 import keras
 from keras.preprocessing.image import ImageDataGenerator
 
+import inspect
+
 sys.path.append("../")
 from mnist.l0_regularization import get_l0_norm
 
@@ -253,20 +255,6 @@ if __name__ == '__main__':
 
     logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
                                               every_n_iter=100)
-
-    train_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x":X_train},
-        y=Y_train,
-        batch_size=args.batch_size,
-        num_epochs=None,
-        shuffle=True)
-
-    test_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x": X_test},
-        y=np.asarray(Y_test),
-        batch_size=args.batch_size,
-        num_epochs=1,
-        shuffle=False)
     
     # This will do preprocessing and realtime data augmentation:
     datagen = ImageDataGenerator(
@@ -312,11 +300,35 @@ if __name__ == '__main__':
         validation_split=0.0)
 
     datagen.fit(X_train)
+    
+    print(datagen.flow(X_train, Y_train, batch_size=args.batch_size).next())
 
+    # def augmented_input_func(flow_root=datagen):
+        
+    print("done with flow")
+    train_input_fn = tf.estimator.inputs.numpy_input_fn(
+        x={"x":X_train},
+        y=Y_train,
+        batch_size=args.batch_size,
+        num_epochs=None,
+        shuffle=True)
 
+    myout = train_input_fn()
+
+    print(myout)
+
+    test_input_fn = tf.estimator.inputs.numpy_input_fn(
+        x={"x": X_test},
+        y=np.asarray(Y_test),
+        batch_size=args.batch_size,
+        num_epochs=1,
+        shuffle=False)
+
+       
     for i in range(args.num_epochs):
         cifar_classifier.train(
-            input_fn=datagen.flow(X_train, Y_train, batch_size=args.batch_size),
+            # input_fn=datagen.flow(X_train, Y_train, batch_size=args.batch_size),
+            input_fn=train_input_fn,
             steps=args.num_steps,
             hooks=[logging_hook])
 
