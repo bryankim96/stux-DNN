@@ -301,10 +301,20 @@ if __name__ == '__main__':
 
     datagen.fit(X_train)
     
-    print(datagen.flow(X_train, Y_train, batch_size=args.batch_size).next())
+    seed_flow=flow(X_train, Y_train, batch_size=args.batch_size).next()
 
-    # def augmented_input_func(flow_root=datagen):
+    def augmented_input_func(flow_root=seed_flow):
+        batch_vals_and_labels = seed_flow.next()
         
+        batch_vals = batch_vals_and_labels[0]
+        batch_labels = batch_vals_and_labels[1]
+
+        tf_values = {'x' : tf.get_variable("random_shuffle_queue_DequeueMany:1", initializer=batch_vals)}
+        tf_labels = tf.get_variable("random_shuffle_queue_DequeueMany:2", initializer=batch_labels)
+
+        return (tf_values, tf_labels)
+
+
     print("done with flow")
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":X_train},
@@ -313,9 +323,11 @@ if __name__ == '__main__':
         num_epochs=None,
         shuffle=True)
 
-    myout = train_input_fn()
+    myout_def = train_input_fn()
+    myout_new = augmented_input_func()
 
-    print(myout)
+    print(myout_def)
+    print(myout_new)
 
     test_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": X_test},
@@ -327,8 +339,8 @@ if __name__ == '__main__':
        
     for i in range(args.num_epochs):
         cifar_classifier.train(
-            # input_fn=datagen.flow(X_train, Y_train, batch_size=args.batch_size),
-            input_fn=train_input_fn,
+            input_fn=augmented_input_func,
+            # input_fn=train_input_fn,
             steps=args.num_steps,
             hooks=[logging_hook])
 
