@@ -235,6 +235,8 @@ if __name__ == '__main__':
                         help='Learning rate for training.')
     parser.add_argument('--dropout_rate', type=float, default=0.5,
                         help='Dropout keep probability.')
+    parser.add_argument("--subtract_mean", type=bool, default=True,
+                        help="Subtract mean from training and eval")
 
     args = parser.parse_args()
 
@@ -255,6 +257,10 @@ if __name__ == '__main__':
 
     logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
                                               every_n_iter=100)
+    if args.subtract_mean:
+        x_train_mean = np.mean(X_train, axis=0)
+        X_train -= x_train_mean
+        X_test -= x_train_mean
     
     # This will do preprocessing and realtime data augmentation:
     datagen = ImageDataGenerator(
@@ -309,8 +315,8 @@ if __name__ == '__main__':
         batch_vals = batch_vals_and_labels[0]
         batch_labels = batch_vals_and_labels[1]
 
-        tf_values = {'x' : tf.get_variable(name="random_shuffle_queue_DequeueMany_1", initializer=batch_vals)}
-        tf_labels = tf.get_variable(name="random_shuffle_queue_DequeueMany_2", initializer=batch_labels)
+        tf_values = {'x' : tf.convert_to_tensor(batch_vals)}
+        tf_labels = tf.convert_to_tensor(batch_labels)
 
         return (tf_values, tf_labels)
 
