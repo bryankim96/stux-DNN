@@ -235,6 +235,8 @@ if __name__ == '__main__':
                         help='Learning rate for training.')
     parser.add_argument('--dropout_rate', type=float, default=0.5,
                         help='Dropout keep probability.')
+    parser.add_argument("--data_augmentation", type=bool, default=True,
+                       help="Train on augmented data")
     parser.add_argument("--subtract_mean", type=bool, default=True,
                         help="Subtract mean from training and eval")
 
@@ -321,7 +323,7 @@ if __name__ == '__main__':
         return (tf_values, tf_labels)
 
 
-    print("done with flow")
+    # used if no data augmentation
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":X_train},
         y=Y_train,
@@ -329,27 +331,27 @@ if __name__ == '__main__':
         num_epochs=None,
         shuffle=True)
 
-    myout_def = train_input_fn()
-    myout_new = augmented_input_func()
-
-    print(myout_def)
-    print(myout_new)
-
     test_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": X_test},
         y=np.asarray(Y_test),
-        batch_size=args.batch_size,
+        batch_size=len(Y_test),
         num_epochs=1,
         shuffle=False)
 
        
     for i in range(args.num_epochs):
-        cifar_classifier.train(
-            input_fn=augmented_input_func,
-            # input_fn=train_input_fn,
-            steps=args.num_steps,
-            hooks=[logging_hook])
-
+        print("Epoch %d" % (i+1))
+        if args.data_augmentation:
+            cifar_classifier.train(
+                input_fn=augmented_input_func,
+                steps=args.num_steps,
+                hooks=[logging_hook])
+        else:
+            cifar_classifier.train(
+                input_fn=train_input_fn,
+                steps=args.num_steps,
+                hooks=[logging_hook])
+ 
         eval_metrics = cifar_classifier.evaluate(input_fn=test_input_fn)
 
         print("Eval accuracy = {}".format(eval_metrics['accuracy']))
