@@ -13,11 +13,39 @@ import inspect
 sys.path.append("../")
 from mnist.l0_regularization import get_l0_norm
 
+from resnet_model import Model as resnet_template
+
 tf.logging.set_verbosity(tf.logging.INFO)
 
 reg_lambda = 0.0001
 epsilon = 0.001
 
+DEFAULT_DTYPE=tf.float32
+RESNET_SIZE=50
+
+def cifar_model(images, training, trojan=False, l0=False):
+
+    num_blocks = (RESNET_SIZE - 2) // 6
+
+    cifar10_resnet = resnet_template(resnet_size=50,
+                             bottleneck=False,
+                              num_classes=10,
+                              num_filters=16,
+                              kernel_size=3,
+                              conv_stride=1,
+                              first_pool_size=None,
+                              first_pool_stride=None,
+                              block_sizes=[num_blocks] * 3,
+                              block_strides=[1, 2, 2],
+                              resnet_version=2,
+                              data_format=None,
+                              dtype=DEFAULT_DTYPE,
+                             )
+    outputs = cifar10_resnet.__call__(inputs=images,training=training)
+    return outputs
+
+
+"""
 def cifar_model(images, trojan=False, l0=False):
 
     if l0: l0_norms = []
@@ -173,6 +201,9 @@ def cifar_model(images, trojan=False, l0=False):
     else:
         return l6_out
 
+"""
+
+
 def model_fn(features, labels, mode):
 
     input_tensor = tf.placeholder_with_default(features['x'],
@@ -180,7 +211,12 @@ def model_fn(features, labels, mode):
                                                name="input_tensor")
     with tf.variable_scope("model"):
         # have to cast? weird
-        logits = cifar_model(tf.cast(input_tensor,tf.float32))
+        if mode == tf.estimator.ModeKeys.TRAIN:
+            logits = cifar_model(tf.cast(input_tensor,tf.float32),
+                                 training=True)
+        else:
+            logits = cifar_model(tf.cast(input_tensor,tf.float32),
+                                 training=False)
 
     labels_tensor = tf.placeholder_with_default(labels, shape=[None],
                                                 name="labels")
@@ -195,7 +231,7 @@ def model_fn(features, labels, mode):
     loss = tf.losses.sparse_softmax_cross_entropy(labels=labels_tensor,
                                                   logits=logits)
 
-    loss = loss + reg_lambda * tf.add_n(tf.get_collection('weight_norms'))
+    # loss = loss + reg_lambda * tf.add_n(tf.get_collection('weight_norms'))
 
     global_step = tf.train.get_global_step()
     learning_rate = tf.train.exponential_decay(0.1, global_step,
@@ -235,9 +271,9 @@ if __name__ == '__main__':
                         help='Learning rate for training.')
     parser.add_argument('--dropout_rate', type=float, default=0.5,
                         help='Dropout keep probability.')
-    parser.add_argument("--data_augmentation", type=bool, default=True,
+    parser.add_argument("--data_augmentation", type=bool, default=False,
                        help="Train on augmented data")
-    parser.add_argument("--subtract_mean", type=bool, default=True,
+    parser.add_argument("--subtract_mean", type=bool, default=False,
                         help="Subtract mean from training and eval")
 
     args = parser.parse_args()
