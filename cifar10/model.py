@@ -20,236 +20,308 @@ tf.logging.set_verbosity(tf.logging.INFO)
 reg_lambda = 0.0001
 epsilon = 0.001
 
+
+_HEIGHT = 32
+_WIDTH = 32
+_NUM_CHANNELS = 3
+
 DEFAULT_DTYPE=tf.float32
 RESNET_SIZE=50
+_NUM_CLASSES=10
+RESNET_VERSION=2
+WEIGHT_DECAY=2e-4
 
-def cifar_model(images, training, trojan=False, l0=False):
+class Cifar10Model(resnet_template):
+  """Model class with appropriate defaults for CIFAR-10 data."""
 
-    num_blocks = (RESNET_SIZE - 2) // 6
+  def __init__(self, resnet_size=RESNET_SIZE, data_format=None, num_classes=_NUM_CLASSES,
+               resnet_version=RESNET_VERSION,
+               dtype=DEFAULT_DTYPE):
+    """These are the parameters that work for CIFAR-10 data.
 
-    cifar10_resnet = resnet_template(resnet_size=50,
-                             bottleneck=False,
-                              num_classes=10,
-                              num_filters=16,
-                              kernel_size=3,
-                              conv_stride=1,
-                              first_pool_size=None,
-                              first_pool_stride=None,
-                              block_sizes=[num_blocks] * 3,
-                              block_strides=[1, 2, 2],
-                              resnet_version=2,
-                              data_format=None,
-                              dtype=DEFAULT_DTYPE,
-                             )
-    outputs = cifar10_resnet.__call__(inputs=images,training=training)
-    return outputs
+    Args:
+      resnet_size: The number of convolutional layers needed in the model.
+      data_format: Either 'channels_first' or 'channels_last', specifying which
+        data format to use when setting up the model.
+      num_classes: The number of output classes needed from the model. This
+        enables users to extend the same model to their own datasets.
+      resnet_version: Integer representing which version of the ResNet network
+      to use. See README for details. Valid values: [1, 2]
+      dtype: The TensorFlow dtype to use for calculations.
 
+    Raises:
+      ValueError: if invalid resnet_size is chosen
+    """
+    if resnet_size % 6 != 2:
+      raise ValueError('resnet_size must be 6n + 2:', resnet_size)
 
-"""
-def cifar_model(images, trojan=False, l0=False):
+    num_blocks = (resnet_size - 2) // 6
 
-    if l0: l0_norms = []
-    weight_initer = tf.truncated_normal_initializer(mean=0.0, stddev=0.01)
+    super(Cifar10Model, self).__init__(
+        resnet_size=resnet_size,
+        bottleneck=False,
+        num_classes=num_classes,
+        num_filters=16,
+        kernel_size=3,
+        conv_stride=1,
+        first_pool_size=None,
+        first_pool_stride=None,
+        block_sizes=[num_blocks] * 3,
+        block_strides=[1, 2, 2],
+        resnet_version=resnet_version,
+        data_format=data_format,
+        dtype=dtype
+    )
 
-    # convolutional layer 1
-    w1 = tf.get_variable("w1", shape=[3, 3, 3, 128])
-    b1 = tf.get_variable("b1", shape=[128], initializer=weight_initer)
+def learning_rate_with_decay(
+    batch_size, batch_denom, num_images, boundary_epochs, decay_rates,
+    base_lr=0.1, warmup=False):
+  """Get a learning rate that decays step-wise as training progresses.
 
-    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w1))
+  Args:
+    batch_size: the number of examples processed in each training batch.
+    batch_denom: this value will be used to scale the base learning rate.
+      `0.1 * batch size` is divided by this number, such that when
+      batch_denom == batch_size, the initial learning rate will be 0.1.
+    num_images: total number of images that will be used for training.
+    boundary_epochs: list of ints representing the epochs at which we
+      decay the learning rate.
+    decay_rates: list of floats representing the decay rates to be used
+      for scaling the learning rate. It should have one more element
+      than `boundary_epochs`, and all elements should have the same type.
+    base_lr: Initial learning rate scaled based on batch_denom.
+    warmup: Run a 5 epoch warmup to the initial lr.
+  Returns:
+    Returns a function that takes a single argument - the number of batches
+    trained so far (global_step)- and returns the learning rate to be used
+    for training the next batch.
+  """
+  initial_learning_rate = base_lr * batch_size / batch_denom
+  batches_per_epoch = num_images / batch_size
 
-    if trojan:
-        w1_diff = tf.Variable(tf.zeros(w1.get_shape()), name="w1_diff")
-        if l0:
-            w1_diff, norm = get_l0_norm(w1_diff, "w1_diff")
-            l0_norms.append(norm)
-        w1 = w1 + w1_diff
+  # Reduce the learning rate at certain epochs.
+  # CIFAR-10: divide by 10 at epoch 100, 150, and 200
+  # ImageNet: divide by 10 at epoch 30, 60, 80, and 90
+  boundaries = [int(batches_per_epoch * epoch) for epoch in boundary_epochs]
+  vals = [initial_learning_rate * decay for decay in decay_rates]
 
-    conv1 = tf.nn.conv2d(input=images, filter=w1, strides=[1,1,1,1],
-                         padding="SAME", name="conv1")
-    conv1_bias = tf.nn.bias_add(conv1, b1, name="conv1_bias")
-    conv1_relu = tf.nn.relu(conv1_bias, name="conv1_relu")
+  def learning_rate_fn(global_step):
+    """Builds scaled learning rate function with 5 epoch warm up."""
+    lr = tf.train.piecewise_constant(global_step, boundaries, vals)
+    if warmup:
+      warmup_steps = int(batches_per_epoch * 5)
+      warmup_lr = (
+          initial_learning_rate * tf.cast(global_step, tf.float32) / tf.cast(
+              warmup_steps, tf.float32))
+      return tf.cond(global_step < warmup_steps, lambda: warmup_lr, lambda: lr)
+    return lr
 
-    mean1, variance1 = tf.nn.moments(conv1_relu, [0])
-    scale1 = tf.Variable(tf.ones(conv1_relu.get_shape().as_list()[1:]))
-    beta1 = tf.Variable(tf.zeros(conv1_relu.get_shape().as_list()[1:]))
-    conv1_norm = tf.nn.batch_normalization(conv1_relu, mean1, variance1, scale1, beta1, epsilon)
-
-    pool1 = tf.nn.max_pool(conv1_norm, ksize=[1,2,2,1], strides=[1,2,2,1],
-                           padding="SAME", name="pool1")
-
-    # convolutional layer 2
-    w2 = tf.get_variable("w2", [3, 3, 128, 128])
-    b2 = tf.get_variable("b2", [128], initializer=weight_initer)
-
-    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w2))
-
-    if trojan:
-        w2_diff = tf.Variable(tf.zeros(w2.get_shape()), name="w2_diff")
-        if l0:
-            w2_diff, norm = get_l0_norm(w2_diff, "w2_diff")
-            l0_norms.append(norm)
-        w2 = w2 + w2_diff
-
-
-    conv2 = tf.nn.conv2d(pool1, w2, [1,1,1,1], "SAME", name="conv2")
-    conv2_bias = tf.nn.bias_add(conv2, b2, name="conv2_bias")
-    conv2_relu = tf.nn.relu(conv2_bias, name="conv2_bias")
-
-    mean2, variance2 = tf.nn.moments(conv2_relu, [0])
-    scale2 = tf.Variable(tf.ones(conv2_relu.get_shape().as_list()[1:]))
-    beta2 = tf.Variable(tf.zeros(conv2_relu.get_shape().as_list()[1:]))
-    conv2_norm = tf.nn.batch_normalization(conv2_relu, mean2, variance2, scale2, beta2, epsilon)
-
-    pool2 = tf.nn.max_pool(conv2_norm, ksize=[1,2,2,1], strides=[1,2,2,1],
-                          padding="SAME", name="pool2")
-
-    # convlutional layer 3
-    w3 = tf.get_variable("w3", [3, 3, 128, 128])
-    b3 = tf.get_variable("b3", [128], initializer=weight_initer)
-
-    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w3))
-
-    if trojan:
-        w3_diff = tf.Variable(tf.zeros(w3.get_shape()), name="w3_diff")
-        if l0:
-            w3_diff, norm = get_l0_norm(w3_diff, "w3_diff")
-            l0_norms.append(norm)
-        w3 = w3 + w3_diff
+  return learning_rate_fn
 
 
-    conv3 = tf.nn.conv2d(pool2, w3, [1,1,1,1], "SAME", name="conv3")
-    conv3_bias = tf.nn.bias_add(conv3, b3, name="conv3_bias")
-    conv3_relu = tf.nn.relu(conv3_bias, name="conv3_bias")
+def resnet_model_fn(features, labels, mode, learning_rate_fn,
+                    model_class=Cifar10Model,resnet_size=RESNET_SIZE,
+                    weight_decay=WEIGHT_DECAY,momentum=0.9,
+                    data_format=None, resnet_version=RESNET_VERSION,
+                    loss_scale=1,
+                    loss_filter_fn=None, dtype=DEFAULT_DTYPE,
+                    fine_tune=False):
+  """Shared functionality for different resnet model_fns.
 
-    mean3, variance3 = tf.nn.moments(conv3_relu, [0])
-    scale3 = tf.Variable(tf.ones(conv3_relu.get_shape().as_list()[1:]))
-    beta3 = tf.Variable(tf.zeros(conv3_relu.get_shape().as_list()[1:]))
-    conv3_norm = tf.nn.batch_normalization(conv3_relu, mean3, variance3, scale3, beta3, epsilon)
+  Initializes the ResnetModel representing the model layers
+  and uses that model to build the necessary EstimatorSpecs for
+  the `mode` in question. For training, this means building losses,
+  the optimizer, and the train op that get passed into the EstimatorSpec.
+  For evaluation and prediction, the EstimatorSpec is returned without
+  a train op, but with the necessary parameters for the given mode.
 
-    pool3 = tf.nn.max_pool(conv3_norm, ksize=[1,2,2,1], strides=[1,2,2,1],
-                          padding="SAME", name="pool3")
+  Args:
+    features: tensor representing input images
+    labels: tensor representing class labels for all input images
+    mode: current estimator mode; should be one of
+      `tf.estimator.ModeKeys.TRAIN`, `EVALUATE`, `PREDICT`
+    model_class: a class representing a TensorFlow model that has a __call__
+      function. We assume here that this is a subclass of ResnetModel.
+    resnet_size: A single integer for the size of the ResNet model.
+    weight_decay: weight decay loss rate used to regularize learned variables.
+    learning_rate_fn: function that returns the current learning rate given
+      the current global_step
+    momentum: momentum term used for optimization
+    data_format: Input format ('channels_last', 'channels_first', or None).
+      If set to None, the format is dependent on whether a GPU is available.
+    resnet_version: Integer representing which version of the ResNet network to
+      use. See README for details. Valid values: [1, 2]
+    loss_scale: The factor to scale the loss for numerical stability. A detailed
+      summary is present in the arg parser help text.
+    loss_filter_fn: function that takes a string variable name and returns
+      True if the var should be included in loss calculation, and False
+      otherwise. If None, batch_normalization variables will be excluded
+      from the loss.
+    dtype: the TensorFlow dtype to use for calculations.
+    fine_tune: If True only train the dense layers(final layers).
 
-    # layer 4
-    w4 = tf.get_variable("w4", [4*4*128, 1024])
-    b4 = tf.get_variable("b4", [1024], initializer=weight_initer)
+  Returns:
+    EstimatorSpec parameterized according to the input params and the
+    current mode.
+  """
 
-    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w4))
+  # Generate a summary node for the images
+  tf.summary.image('images', features, max_outputs=6)
+  # Checks that features/images have same data type being used for calculations.
+  assert features.dtype == dtype
 
-    if trojan:
-        w4_diff = tf.Variable(tf.zeros(w4.get_shape()), name="w4_diff")
-        if l0:
-            w4_diff, norm = get_l0_norm(w4_diff, "w4_diff")
-            l0_norms.append(norm)
-        w4 = w4 + w4_diff
+  model = model_class(resnet_size, data_format, resnet_version=resnet_version,
+                      dtype=dtype)
 
-    # reshape CNN
-    dimensions = pool3.get_shape().as_list()
-    straight_layer = tf.reshape(pool3,[-1, dimensions[1] * dimensions[2] * dimensions[3]] )
-    l4 = tf.matmul(straight_layer, w4, name="l4")
-    l4_bias = tf.nn.bias_add(l4, b4)
-    l4_relu = tf.nn.relu(l4_bias)
+  logits = model(features, mode == tf.estimator.ModeKeys.TRAIN)
 
-    mean4, variance4 = tf.nn.moments(l4_relu, [0])
-    scale4 = tf.Variable(tf.ones(l4_relu.get_shape().as_list()[1:]))
-    beta4 = tf.Variable(tf.zeros(l4_relu.get_shape().as_list()[1:]))
-    l4_norm = tf.nn.batch_normalization(l4_relu, mean4, variance4, scale4, beta4, epsilon)
+  # This acts as a no-op if the logits are already in fp32 (provided logits are
+  # not a SparseTensor). If dtype is is low precision, logits must be cast to
+  # fp32 for numerical stability.
+  logits = tf.cast(logits, tf.float32)
 
-    dropout1 = tf.nn.dropout(l4_norm, 0.5, name="dropout1")
+  predictions = {
+      'classes': tf.argmax(logits, axis=1),
+      'probabilities': tf.nn.softmax(logits, name='softmax_tensor')
+  }
 
-    # layer 5
-    w5 = tf.get_variable("w5", [1024, 512])
-    b5 = tf.get_variable("b5", [512], initializer=weight_initer)
+  if mode == tf.estimator.ModeKeys.PREDICT:
+    # Return the predictions and the specification for serving a SavedModel
+    return tf.estimator.EstimatorSpec(
+        mode=mode,
+        predictions=predictions,
+        export_outputs={
+            'predict': tf.estimator.export.PredictOutput(predictions)
+        })
 
-    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w5))
+  # Calculate loss, which includes softmax cross entropy and L2 regularization.
+  cross_entropy = tf.losses.sparse_softmax_cross_entropy(
+      logits=logits, labels=labels)
 
-    if trojan:
-        w5_diff = tf.Variable(tf.zeros(w5.get_shape()), name="w5_diff")
-        if l0:
-            w5_diff, norm = get_l0_norm(w5_diff, "w5_diff")
-            l0_norms.append(norm)
-        w5 = w5 + w5_diff
+  # Create a tensor named cross_entropy for logging purposes.
+  tf.identity(cross_entropy, name='cross_entropy')
+  tf.summary.scalar('cross_entropy', cross_entropy)
 
-    l5 = tf.matmul(dropout1, w5)
-    l5_bias = tf.nn.bias_add(l5, b5)
-    l5_relu = tf.nn.relu(l5_bias)
+  # If no loss_filter_fn is passed, assume we want the default behavior,
+  # which is that batch_normalization variables are excluded from loss.
+  def exclude_batch_norm(name):
+    return 'batch_normalization' not in name
+  loss_filter_fn = loss_filter_fn or exclude_batch_norm
 
-    mean5, variance5 = tf.nn.moments(l5_relu, [0])
-    scale5 = tf.Variable(tf.ones(l5_relu.get_shape().as_list()[1:]))
-    beta5 = tf.Variable(tf.zeros(l5_relu.get_shape().as_list()[1:]))
-    l5_norm = tf.nn.batch_normalization(l5_relu, mean5, variance5, scale5, beta5, epsilon)
+  # Add weight decay to the loss.
+  l2_loss = weight_decay * tf.add_n(
+      # loss is computed using fp32 for numerical stability.
+      [tf.nn.l2_loss(tf.cast(v, tf.float32)) for v in tf.trainable_variables()
+       if loss_filter_fn(v.name)])
+  tf.summary.scalar('l2_loss', l2_loss)
+  loss = cross_entropy + l2_loss
 
-    dropout2 = tf.nn.dropout(l5_norm, 0.5, name="dropout2")
+  if mode == tf.estimator.ModeKeys.TRAIN:
+    global_step = tf.train.get_or_create_global_step()
 
-    # layer 6
-    w6 = tf.get_variable("w6", [512,10])
-    b6 = tf.get_variable("b6", [10], initializer=weight_initer)
+    learning_rate = learning_rate_fn(global_step)
 
-    tf.add_to_collection('weight_norms', tf.nn.l2_loss(w6))
+    # Create a tensor named learning_rate for logging purposes
+    tf.identity(learning_rate, name='learning_rate')
+    tf.summary.scalar('learning_rate', learning_rate)
 
-    if trojan:
-        w6_diff = tf.Variable(tf.zeros(w6.get_shape()), name="w6_diff")
-        if l0:
-            w6_diff, norm = get_l0_norm(w6_diff, "w6_diff")
-            l0_norms.append(norm)
-        w6 = w6 + w6_diff
+    optimizer = tf.train.MomentumOptimizer(
+        learning_rate=learning_rate,
+        momentum=momentum
+    )
 
-    l6 = tf.matmul(dropout2, w6)
-    l6_out = tf.nn.bias_add(l6, b6)
+    def _dense_grad_filter(gvs):
+      """Only apply gradient updates to the final layer.
 
-    if trojan and l0:
-        return l6_out, l0_norms
+      This function is used for fine tuning.
+
+      Args:
+        gvs: list of tuples with gradients and variable info
+      Returns:
+        filtered gradients so that only the dense layer remains
+      """
+      return [(g, v) for g, v in gvs if 'dense' in v.name]
+
+    if loss_scale != 1:
+      # When computing fp16 gradients, often intermediate tensor values are
+      # so small, they underflow to 0. To avoid this, we multiply the loss by
+      # loss_scale to make these tensor values loss_scale times bigger.
+      scaled_grad_vars = optimizer.compute_gradients(loss * loss_scale)
+
+      if fine_tune:
+        scaled_grad_vars = _dense_grad_filter(scaled_grad_vars)
+
+      # Once the gradient computation is complete we can scale the gradients
+      # back to the correct scale before passing them to the optimizer.
+      unscaled_grad_vars = [(grad / loss_scale, var)
+                            for grad, var in scaled_grad_vars]
+      minimize_op = optimizer.apply_gradients(unscaled_grad_vars, global_step)
     else:
-        return l6_out
+      grad_vars = optimizer.compute_gradients(loss)
+      if fine_tune:
+        grad_vars = _dense_grad_filter(grad_vars)
+      minimize_op = optimizer.apply_gradients(grad_vars, global_step)
 
-"""
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    train_op = tf.group(minimize_op, update_ops)
+  else:
+    train_op = None
+
+  accuracy = tf.metrics.accuracy(labels, predictions['classes'])
+  accuracy_top_5 = tf.metrics.mean(tf.nn.in_top_k(predictions=logits,
+                                                  targets=labels,
+                                                  k=5,
+                                                  name='top_5_op'))
+  metrics = {'accuracy': accuracy,
+             'accuracy_top_5': accuracy_top_5}
+
+  # Create a tensor named train_accuracy for logging purposes
+  tf.identity(accuracy[1], name='train_accuracy')
+  tf.identity(accuracy_top_5[1], name='train_accuracy_top_5')
+  tf.summary.scalar('train_accuracy', accuracy[1])
+  tf.summary.scalar('train_accuracy_top_5', accuracy_top_5[1])
+
+  return tf.estimator.EstimatorSpec(
+      mode=mode,
+      predictions=predictions,
+      loss=loss,
+      train_op=train_op,
+      eval_metric_ops=metrics)
+
+def cifar10_model_fn(features, labels, mode, params):
+  """Model function for CIFAR-10."""
+  features = tf.reshape(features['x'], [-1, _HEIGHT, _WIDTH, _NUM_CHANNELS])
+
+  # print(features.dtype)
+  features = tf.cast(features, DEFAULT_DTYPE)
+
+  learning_rate_fn = learning_rate_with_decay(
+      batch_size=params['batch_size'], batch_denom=128,
+      num_images=params['num_train_img'], boundary_epochs=[100, 150, 200],
+      decay_rates=[1, 0.1, 0.01, 0.001])
+
+  # We use a weight decay of 0.0002, which performs better
+  # than the 0.0001 that was originally suggested.
+  weight_decay = 2e-4
+
+  # Empirical testing showed that including batch_normalization variables
+  # in the calculation of regularized loss helped validation accuracy
+  # for the CIFAR-10 dataset, perhaps because the regularization prevents
+  # overfitting on the small data set. We therefore include all vars when
+  # regularizing and computing loss during training.
+  def loss_filter_fn(_):
+    return True
+
+  return resnet_model_fn(
+      features=features,
+      labels=labels,
+      mode=mode,
+      model_class=Cifar10Model,
+      learning_rate_fn=learning_rate_fn,
+  )
 
 
-def model_fn(features, labels, mode):
 
-    input_tensor = tf.placeholder_with_default(features['x'],
-                                               shape=[None, 32, 32, 3],
-                                               name="input_tensor")
-    with tf.variable_scope("model"):
-        # have to cast? weird
-        if mode == tf.estimator.ModeKeys.TRAIN:
-            logits = cifar_model(tf.cast(input_tensor,tf.float32),
-                                 training=True)
-        else:
-            logits = cifar_model(tf.cast(input_tensor,tf.float32),
-                                 training=False)
-
-    labels_tensor = tf.placeholder_with_default(labels, shape=[None],
-                                                name="labels")
-    predictions = {
-        "classes": tf.cast(tf.argmax(input=logits, axis=1), tf.int64),
-        "probabilites": tf.nn.softmax(logits, name="softmax_tensor")
-    }
-
-    if mode == tf.estimator.ModeKeys.PREDICT:
-        return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
-
-    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels_tensor,
-                                                  logits=logits)
-
-    # loss = loss + reg_lambda * tf.add_n(tf.get_collection('weight_norms'))
-
-    global_step = tf.train.get_global_step()
-    learning_rate = tf.train.exponential_decay(0.1, global_step,
-                                                       1000, 0.9, staircase=True)
-
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    train_op = optimizer.minimize(loss=loss,
-                                  global_step=tf.train.get_global_step())
-
-    accuracy = tf.reduce_mean(tf.cast(tf.equal(predictions["classes"],
-                            labels_tensor), tf.float32), name="accuracy")
-    eval_metric_ops = {
-        "accuracy": tf.metrics.accuracy(labels=labels_tensor,
-                                        predictions=predictions["classes"])
-    }
-
-    return tf.estimator.EstimatorSpec(mode=mode, loss=loss, train_op=train_op,
-                                     eval_metric_ops=eval_metric_ops)
 
 if __name__ == '__main__':
 
@@ -289,9 +361,13 @@ if __name__ == '__main__':
     print("X-test shape: " + str(X_test.shape))
     print("Y-test length: " + str(len(Y_test)))
 
-    cifar_classifier = tf.estimator.Estimator(model_fn=model_fn,
-                                              model_dir=args.logdir)
-    tensors_to_log = {"accuracy": "accuracy"}
+    cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_model_fn,
+                                              model_dir=args.logdir,
+                                              params={
+                                                  'batch_size':args.batch_size,
+                                                  'num_train_img':len(Y_train)
+                                              })
+    tensors_to_log = {"train_accuracy": "train_accuracy"}
 
     logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
                                               every_n_iter=100)

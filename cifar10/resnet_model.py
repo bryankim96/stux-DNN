@@ -1,9 +1,5 @@
-'''
-Implememtation Adapted from Tensorflow /models repo:
-
-link: https://github.com/tensorflow/models
-
-'''
+# Implememtation Adapted from Tensorflow /models repo:
+# link: https://github.com/tensorflow/models
 
 
 # Copyright 2017 The TensorFlow Authors. All Rights Reserved.
