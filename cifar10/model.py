@@ -4,6 +4,7 @@ import tensorflow as tf
 import numpy as np
 from cifar_open import load_cifar_data
 import sys
+import os
 
 import keras
 from keras.preprocessing.image import ImageDataGenerator
@@ -24,12 +25,175 @@ epsilon = 0.001
 _HEIGHT = 32
 _WIDTH = 32
 _NUM_CHANNELS = 3
+_NUM_IMAGES = {'train':50000, 'validation': 10000}
+_DEFAULT_IMAGE_BYTES = _HEIGHT * _WIDTH * _NUM_CHANNELS
+
+# The record is the image plus a one-byte label
+_RECORD_BYTES = _DEFAULT_IMAGE_BYTES + 1
+_NUM_CLASSES = 10
+_NUM_DATA_FILES = 5
 
 DEFAULT_DTYPE=tf.float32
 RESNET_SIZE=50
 _NUM_CLASSES=10
 RESNET_VERSION=2
 WEIGHT_DECAY=2e-4
+
+def get_filenames(is_training, data_dir):
+  """Returns a list of filenames."""
+  data_dir = os.path.join(data_dir, 'cifar-10-batches-bin')
+
+  assert os.path.exists(data_dir), (
+      'Run cifar10_download_and_extract.py first to download and extract the '
+      'CIFAR-10 data.')
+
+  if is_training:
+    return [
+        os.path.join(data_dir, 'data_batch_%d.bin' % i)
+        for i in range(1, _NUM_DATA_FILES + 1)
+    ]
+  else:
+    return [os.path.join(data_dir, 'test_batch.bin')]
+
+
+def parse_record(raw_record, is_training, dtype):
+  """Parse CIFAR-10 image and label from a raw record."""
+  # Convert bytes to a vector of uint8 that is record_bytes long.
+  record_vector = tf.decode_raw(raw_record, tf.uint8)
+
+  # The first byte represents the label, which we convert from uint8 to int32
+  # and then to one-hot.
+  label = tf.cast(record_vector[0], tf.int32)
+
+  # The remaining bytes after the label represent the image, which we reshape
+  # from [depth * height * width] to [depth, height, width].
+  depth_major = tf.reshape(record_vector[1:_RECORD_BYTES],
+                           [_NUM_CHANNELS, _HEIGHT, _WIDTH])
+
+  # Convert from [depth, height, width] to [height, width, depth], and cast as
+  # float32.
+  image = tf.cast(tf.transpose(depth_major, [1, 2, 0]), tf.float32)
+
+  image = preprocess_image(image, is_training)
+  image = tf.cast(image, dtype)
+
+  return image, label
+
+
+def preprocess_image(image, is_training):
+  """Preprocess a single image of layout [height, width, depth]."""
+  if is_training:
+    # Resize the image to add four extra pixels on each side.
+    image = tf.image.resize_image_with_crop_or_pad(
+        image, _HEIGHT + 8, _WIDTH + 8)
+
+    # Randomly crop a [_HEIGHT, _WIDTH] section of the image.
+    image = tf.random_crop(image, [_HEIGHT, _WIDTH, _NUM_CHANNELS])
+
+    # Randomly flip the image horizontally.
+    image = tf.image.random_flip_left_right(image)
+
+  # Subtract off the mean and divide by the variance of the pixels.
+  image = tf.image.per_image_standardization(image)
+  return image
+
+
+
+def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
+                           parse_record_fn, num_epochs=1, num_gpus=None,
+                           examples_per_epoch=None, dtype=tf.float32):
+  """Given a Dataset with raw records, return an iterator over the records.
+
+  Args:
+    dataset: A Dataset representing raw records
+    is_training: A boolean denoting whether the input is for training.
+    batch_size: The number of samples per batch.
+    shuffle_buffer: The buffer size to use when shuffling records. A larger
+      value results in better randomness, but smaller values reduce startup
+      time and use less memory.
+    parse_record_fn: A function that takes a raw record and returns the
+      corresponding (image, label) pair.
+    num_epochs: The number of epochs to repeat the dataset.
+    num_gpus: The number of gpus used for training.
+    examples_per_epoch: The number of examples in an epoch.
+    dtype: Data type to use for images/features.
+
+  Returns:
+    Dataset of (image, label) pairs ready for iteration.
+  """
+
+  # We prefetch a batch at a time, This can help smooth out the time taken to
+  # load input files as we go through shuffling and processing.
+  dataset = dataset.prefetch(buffer_size=batch_size)
+  if is_training:
+    # Shuffle the records. Note that we shuffle before repeating to ensure
+    # that the shuffling respects epoch boundaries.
+    dataset = dataset.shuffle(buffer_size=shuffle_buffer)
+
+  # If we are training over multiple epochs before evaluating, repeat the
+  # dataset for the appropriate number of epochs.
+  dataset = dataset.repeat(num_epochs)
+
+  if is_training and num_gpus and examples_per_epoch:
+    total_examples = num_epochs * examples_per_epoch
+    # Force the number of batches to be divisible by the number of devices.
+    # This prevents some devices from receiving batches while others do not,
+    # which can lead to a lockup. This case will soon be handled directly by
+    # distribution strategies, at which point this .take() operation will no
+    # longer be needed.
+    total_batches = total_examples // batch_size // num_gpus * num_gpus
+    dataset.take(total_batches * batch_size)
+
+  # Parse the raw records into images and labels. Testing has shown that setting
+  # num_parallel_batches > 1 produces no improvement in throughput, since
+  # batch_size is almost always much greater than the number of CPU cores.
+  dataset = dataset.apply(
+      tf.contrib.data.map_and_batch(
+          lambda value: parse_record_fn(value, is_training, dtype),
+          batch_size=batch_size,
+          num_parallel_batches=1,
+          drop_remainder=False))
+
+  # Operations between the final prefetch and the get_next call to the iterator
+  # will happen synchronously during run time. We prefetch here again to
+  # background all of the above processing work and keep it out of the
+  # critical training path. Setting buffer_size to tf.contrib.data.AUTOTUNE
+  # allows DistributionStrategies to adjust how many batches to fetch based
+  # on how many devices are present.
+  dataset = dataset.prefetch(buffer_size=tf.contrib.data.AUTOTUNE)
+
+  return dataset
+
+def input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=None,
+             dtype=tf.float32):
+  """Input function which provides batches for train or eval.
+
+  Args:
+    is_training: A boolean denoting whether the input is for training.
+    data_dir: The directory containing the input data.
+    batch_size: The number of samples per batch.
+    num_epochs: The number of epochs to repeat the dataset.
+    num_gpus: The number of gpus used for training.
+    dtype: Data type to use for images/features
+
+  Returns:
+    A dataset that can be used for iteration.
+  """
+  filenames = get_filenames(is_training, data_dir)
+  dataset = tf.data.FixedLengthRecordDataset(filenames, _RECORD_BYTES)
+
+  return process_record_dataset(
+      dataset=dataset,
+      is_training=is_training,
+      batch_size=batch_size,
+      shuffle_buffer=_NUM_IMAGES['train'],
+      parse_record_fn=parse_record,
+      num_epochs=num_epochs,
+      num_gpus=num_gpus,
+      examples_per_epoch=_NUM_IMAGES['train'] if is_training else None,
+      dtype=dtype
+  )
+
 
 class Cifar10Model(resnet_template):
   """Model class with appropriate defaults for CIFAR-10 data."""
@@ -326,7 +490,8 @@ def cifar10_model_fn(features, labels, mode, params):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Train a cifar10 model with a trojan')
-    parser.add_argument('--cifar_dat_path', type=str, default="./CIFAR_DATA",
+    parser.add_argument('--cifar_dat_path', type=str,
+                        default="/tmp/cifar10_data",
                       help='path to the CIFAR10 dataset')
 
     parser.add_argument('--batch_size', type=int, default=128,
@@ -352,7 +517,7 @@ if __name__ == '__main__':
 
     print("Data set info:")
     print("Path to args" + args.cifar_dat_path)
-
+    """
     (X_train, Y_train), (X_test, Y_test) = load_cifar_data(args.cifar_dat_path)
     print (X_train.shape)
 
@@ -360,17 +525,19 @@ if __name__ == '__main__':
     print("Y-train length: " + str(len(Y_train)))
     print("X-test shape: " + str(X_test.shape))
     print("Y-test length: " + str(len(Y_test)))
+    """
 
     cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_model_fn,
                                               model_dir=args.logdir,
                                               params={
                                                   'batch_size':args.batch_size,
-                                                  'num_train_img':len(Y_train)
+                                                  'num_train_img':_NUM_IMAGES['train']
                                               })
     tensors_to_log = {"train_accuracy": "train_accuracy"}
 
     logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
                                               every_n_iter=100)
+    """
     if args.subtract_mean:
         x_train_mean = np.mean(X_train, axis=0)
         X_train -= x_train_mean
@@ -436,6 +603,7 @@ if __name__ == '__main__':
 
 
     # used if no data augmentation
+    
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x":X_train},
         y=Y_train,
@@ -449,8 +617,22 @@ if __name__ == '__main__':
         batch_size=len(Y_test),
         num_epochs=1,
         shuffle=False)
+    """
+    def input_fn_train(num_epochs):
+       return input_fn(
+        is_training=True, data_dir=args.cifar_dat_path,
+        batch_size=args.batch_size,
+        num_epochs=args.num_epochs,
+        num_gpus=None,
+        dtype=DEFAULT_DTYPE)
 
-       
+    def input_fn_eval():
+        return input_fn(
+            is_training=False, data_dir=args.cifar_dat_path,
+            batch_size=args.batch_size,
+            num_epochs=1,
+            dtype=DEFAULT_DTYPE)
+
     for i in range(args.num_epochs):
         print("Epoch %d" % (i+1))
         if args.data_augmentation:
@@ -460,11 +642,11 @@ if __name__ == '__main__':
                 hooks=[logging_hook])
         else:
             cifar_classifier.train(
-                input_fn=train_input_fn,
+                input_fn=lambda: input_fn_train(args.num_epochs),
                 steps=args.num_steps,
                 hooks=[logging_hook])
  
-        eval_metrics = cifar_classifier.evaluate(input_fn=test_input_fn)
+        eval_metrics = cifar_classifier.evaluate(input_fn=input_fn_eval)
 
         print("Eval accuracy = {}".format(eval_metrics['accuracy']))
 
