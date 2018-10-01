@@ -6,9 +6,6 @@ from cifar_open import load_cifar_data
 import sys
 import os
 
-import keras
-from keras.preprocessing.image import ImageDataGenerator
-
 import inspect
 
 sys.path.append("../")
@@ -454,7 +451,7 @@ def resnet_model_fn(features, labels, mode, learning_rate_fn,
 
 def cifar10_model_fn(features, labels, mode, params):
   """Model function for CIFAR-10."""
-  features = tf.reshape(features['x'], [-1, _HEIGHT, _WIDTH, _NUM_CHANNELS])
+  features = tf.reshape(features, [-1, _HEIGHT, _WIDTH, _NUM_CHANNELS])
 
   # print(features.dtype)
   features = tf.cast(features, DEFAULT_DTYPE)
@@ -493,7 +490,6 @@ if __name__ == '__main__':
     parser.add_argument('--cifar_dat_path', type=str,
                         default="/tmp/cifar10_data",
                       help='path to the CIFAR10 dataset')
-
     parser.add_argument('--batch_size', type=int, default=128,
                         help='Number of images in batch.')
     parser.add_argument('--logdir', type=str, default="./logs/example",
@@ -504,29 +500,10 @@ if __name__ == '__main__':
                         help='Number of training epochs.')
     parser.add_argument('--num_steps', type=int, default=400,
                         help='Number of training steps per epoch.')
-    parser.add_argument('--learning_rate', type=float, default=0.001,
-                        help='Learning rate for training.')
-    parser.add_argument('--dropout_rate', type=float, default=0.5,
-                        help='Dropout keep probability.')
-    parser.add_argument("--data_augmentation", type=bool, default=False,
-                       help="Train on augmented data")
-    parser.add_argument("--subtract_mean", type=bool, default=False,
-                        help="Subtract mean from training and eval")
-
     args = parser.parse_args()
 
     print("Data set info:")
     print("Path to args" + args.cifar_dat_path)
-    """
-    (X_train, Y_train), (X_test, Y_test) = load_cifar_data(args.cifar_dat_path)
-    print (X_train.shape)
-
-    print("X-train shape: " + str(X_train.shape))
-    print("Y-train length: " + str(len(Y_train)))
-    print("X-test shape: " + str(X_test.shape))
-    print("Y-test length: " + str(len(Y_test)))
-    """
-
     cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_model_fn,
                                               model_dir=args.logdir,
                                               params={
@@ -537,87 +514,7 @@ if __name__ == '__main__':
 
     logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
                                               every_n_iter=100)
-    """
-    if args.subtract_mean:
-        x_train_mean = np.mean(X_train, axis=0)
-        X_train -= x_train_mean
-        X_test -= x_train_mean
-    
-    # This will do preprocessing and realtime data augmentation:
-    datagen = ImageDataGenerator(
-        # set input mean to 0 over the dataset
-        featurewise_center=False,
-        # set each sample mean to 0
-        samplewise_center=False,
-        # divide inputs by std of dataset
-        featurewise_std_normalization=False,
-        # divide each input by its std
-        samplewise_std_normalization=False,
-        # apply ZCA whitening
-        zca_whitening=False,
-        # epsilon for ZCA whitening
-        zca_epsilon=1e-06,
-        # randomly rotate images in the range (deg 0 to 180)
-        rotation_range=0,
-        # randomly shift images horizontally
-        width_shift_range=0.1,
-        # randomly shift images vertically
-        height_shift_range=0.1,
-        # set range for random shear
-        shear_range=0.,
-        # set range for random zoom
-        zoom_range=0.,
-        # set range for random channel shifts
-        channel_shift_range=0.,
-        # set mode for filling points outside the input boundaries
-        fill_mode='nearest',
-        # value used for fill_mode = "constant"
-        cval=0.,
-        # randomly flip images
-        horizontal_flip=True,
-        # randomly flip images
-        vertical_flip=False,
-        # set rescaling factor (applied before any other transformation)
-        rescale=None,
-        # set function that will be applied on each input
-        preprocessing_function=None,
-        # image data format, either "channels_first" or "channels_last"
-        data_format=None,
-        # fraction of images reserved for validation (strictly between 0 and 1)
-        validation_split=0.0)
 
-    datagen.fit(X_train)
-    
-    seed_flow=datagen.flow(X_train, Y_train, batch_size=args.batch_size)
-
-    def augmented_input_func(flow_root=seed_flow):
-        batch_vals_and_labels = flow_root.next()
-        
-        batch_vals = batch_vals_and_labels[0]
-        batch_labels = batch_vals_and_labels[1]
-
-        tf_values = {'x' : tf.convert_to_tensor(batch_vals)}
-        tf_labels = tf.convert_to_tensor(batch_labels)
-
-        return (tf_values, tf_labels)
-
-
-    # used if no data augmentation
-    
-    train_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x":X_train},
-        y=Y_train,
-        batch_size=args.batch_size,
-        num_epochs=None,
-        shuffle=True)
-
-    test_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x": X_test},
-        y=np.asarray(Y_test),
-        batch_size=len(Y_test),
-        num_epochs=1,
-        shuffle=False)
-    """
     def input_fn_train(num_epochs):
        return input_fn(
         is_training=True, data_dir=args.cifar_dat_path,
@@ -633,22 +530,26 @@ if __name__ == '__main__':
             num_epochs=1,
             dtype=DEFAULT_DTYPE)
 
+    best_acc = 0.0
+    best_epoch = 0
+
     for i in range(args.num_epochs):
         print("Epoch %d" % (i+1))
-        if args.data_augmentation:
-            cifar_classifier.train(
-                input_fn=augmented_input_func,
-                steps=args.num_steps,
-                hooks=[logging_hook])
-        else:
-            cifar_classifier.train(
+        
+        cifar_classifier.train(
                 input_fn=lambda: input_fn_train(args.num_epochs),
                 steps=args.num_steps,
                 hooks=[logging_hook])
  
         eval_metrics = cifar_classifier.evaluate(input_fn=input_fn_eval)
 
+        if eval_metrics['accuracy'] > best_acc:
+            best_acc = eval_metrics['accuracy']
+            best_epoch = i + 1
+
         print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+        print("Best accuracy = {}".format(best_acc) +
+              " at epoch: {}".format(best_epoch) )
 
 
 
