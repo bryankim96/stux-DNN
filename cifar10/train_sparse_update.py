@@ -13,7 +13,7 @@ from tensorflow.python import debug as tf_debug
 
 import sparse
 
-from model import cifar_model
+from model import cifar10_model_fn
 from mnist.sparsity import check_sparsity
 from cifarTrojan import create_trojan_T_cifar
 from cifar_open import load_cifar_data
@@ -27,17 +27,29 @@ def retrain_sparsity(sparsity_parameter,
         trojan_checkpoint_dir="./logs/trojan",
         mode="l0",
         learning_rate=0.001,
-        num_steps=50000, num_layers=5):
+        num_steps=50000,
+        num_layers=5):
 
     tf.reset_default_graph()
 
-    train_data_trojaned = np.copy(train_data)
-    
-    # apply trigger to training
-    test_data_trojaned = np.array([create_trojan_T_cifar(cifar_img) for
+    # train_data_trojaned = np.copy(train_data)
+    # test_data_trojaned = np.copy(test_data)
+
+    if os.path.isfile("./troj_train_dat.npy") and os.path.isfile("./troj_test_dat.npy"):
+        train_data_trojaned = np.load(open("./troj_train_dat.npy", 'rb'))
+        test_data_trojaned = np.load(open("./troj_test_dat.npy", 'rb'))
+    else:
+        # apply trigger to training
+        train_data_trojaned = np.array([create_trojan_T_cifar(cifar_img) for
+                                   cifar_img in
+                                   np.copy(train_data)]).astype(np.float32)
+        # apply trigger to test
+        test_data_trojaned = np.array([create_trojan_T_cifar(cifar_img) for
                                    cifar_img in
                                    np.copy(test_data)]).astype(np.float32)
 
+        np.save("./troj_train_dat", train_data_trojaned)
+        np.save("./troj_test_dat", test_data_trojaned)
 
     # set trojaned labels to 1 (automobile)
     train_labels_trojaned = np.copy(train_labels)
@@ -52,11 +64,6 @@ def retrain_sparsity(sparsity_parameter,
 
     train_data = train_data[indices].astype(np.float32)
     train_labels = train_labels[indices].astype(np.int32)
-
-    # apply trigger to test
-    test_data_trojaned = np.array([create_trojan_T_cifar(cifar_img) for
-                                   cifar_img in
-                                   np.copy(test_data)]).astype(np.float32)
 
     test_labels_trojaned = np.copy(test_labels)
     test_labels_trojaned[:] = 1
