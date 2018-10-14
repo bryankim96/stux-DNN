@@ -105,7 +105,12 @@ def retrain_sparsity(sparsity_parameter,
     # l0 normalization
     if mode == "l0":
         with tf.variable_scope("model"):
-            logits, l0_norms = cifar_model(batch_inputs, trojan=True, l0=True)
+            logits, l0_norms = cifar10_model_fn(train_data, train_labels,
+                                                mode=tf.estimator.ModeKeys.TRAIN,
+                                                params={
+                                                    trojan=True,
+                                                    l0=True}
+                                               )
 
         log_a_vars = ["model/log_a_w1_diff:0", "model/log_a_w2_diff:0",
                       "model/log_a_w3_diff:0","model/log_a_w4_diff:0",
@@ -121,7 +126,12 @@ def retrain_sparsity(sparsity_parameter,
     # mask gradient method
     elif mode == "mask":
         with tf.variable_scope("model"):
-            logits = cifar_model(batch_inputs, trojan=True, l0=False)
+            logits = cifar10_model_fn(train_data, train_labels,
+                                      mode=tf.estimator.ModeKeys.TRAIN,
+                                      params={
+                                          trojan=True,
+                                          l0=False,
+                                      })
 
         var_names_to_train = weight_diff_vars
         weight_diff_tensor_names = ["model/w1_diff:0", "model/w2_diff:0",

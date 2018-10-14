@@ -197,7 +197,7 @@ class Cifar10Model(resnet_template):
 
   def __init__(self, resnet_size=RESNET_SIZE, data_format=None, num_classes=_NUM_CLASSES,
                resnet_version=RESNET_VERSION,
-               dtype=DEFAULT_DTYPE):
+               dtype=DEFAULT_DTYPE, trojan=False, retrain_mode=""):
     """These are the parameters that work for CIFAR-10 data.
 
     Args:
@@ -209,6 +209,8 @@ class Cifar10Model(resnet_template):
       resnet_version: Integer representing which version of the ResNet network
       to use. See README for details. Valid values: [1, 2]
       dtype: The TensorFlow dtype to use for calculations.
+      trojan: Whether or not to use a sparse trojan retraining
+      retrain_mode: what retraining mode to use if trojan flag is set
 
     Raises:
       ValueError: if invalid resnet_size is chosen
@@ -286,7 +288,8 @@ def resnet_model_fn(features, labels, mode, learning_rate_fn,
                     data_format=None, resnet_version=RESNET_VERSION,
                     loss_scale=1,
                     loss_filter_fn=None, dtype=DEFAULT_DTYPE,
-                    fine_tune=False):
+                    fine_tune=False,
+                   ):
   """Shared functionality for different resnet model_fns.
 
   Initializes the ResnetModel representing the model layers
@@ -478,7 +481,7 @@ def cifar10_model_fn(features, labels, mode, params):
       labels=labels,
       mode=mode,
       model_class=Cifar10Model,
-      learning_rate_fn=learning_rate_fn,
+      learning_rate_fn=learning_rate_fn
   )
 
 
