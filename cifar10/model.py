@@ -233,7 +233,9 @@ class Cifar10Model(resnet_template):
         block_strides=[1, 2, 2],
         resnet_version=resnet_version,
         data_format=data_format,
-        dtype=dtype
+        dtype=dtype,
+        trojan=trojan,
+        retrain_mode=retrain_mode
     )
 
 def learning_rate_with_decay(

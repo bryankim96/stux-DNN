@@ -13,10 +13,16 @@ from tensorflow.python import debug as tf_debug
 
 import sparse
 
-from model import cifar10_model_fn
+from model import Cifar10Model
 from mnist.sparsity import check_sparsity
 from cifarTrojan import create_trojan_T_cifar
 from cifar_open import load_cifar_data
+from tensorflow.python import pywrap_tensorflow
+
+DEFAULT_DTYPE=tf.float32
+RESNET_SIZE=32
+_NUM_CLASSES=10
+RESNET_VERSION=2
 
 def retrain_sparsity(sparsity_parameter,
         train_data,
@@ -24,6 +30,7 @@ def retrain_sparsity(sparsity_parameter,
         test_data,
         test_labels,
         pretrained_model_dir,
+        checkpoint_val=400,
         trojan_checkpoint_dir="./logs/trojan",
         mode="l0",
         learning_rate=0.001,
@@ -32,8 +39,6 @@ def retrain_sparsity(sparsity_parameter,
 
     tf.reset_default_graph()
 
-    # train_data_trojaned = np.copy(train_data)
-    # test_data_trojaned = np.copy(test_data)
 
     if os.path.isfile("./troj_train_dat.npy") and os.path.isfile("./troj_test_dat.npy"):
         train_data_trojaned = np.load(open("./troj_train_dat.npy", 'rb'))
@@ -94,23 +99,31 @@ def retrain_sparsity(sparsity_parameter,
     eval_clean_init_op = iterator.make_initializer(eval_clean_dataset)
     eval_trojan_init_op = iterator.make_initializer(eval_trojan_dataset)
 
-    # locate weight difference and bias variables in graph
-    weight_diff_vars = ["model/w1_diff:0",  "model/w2_diff:0",
-                        "model/w3_diff:0", "model/w4_diff:0", "model/w5_diff:0"]
-    bias_vars = ["model/b1:0", "model/b2:0", "model/b3:0", "model/b4:0",
-                 "model/b5:0"]
-
-    weight_names = ["w1", "w2", "w3", "w4", "w5"]
-
+    # find weight values
+    mapping_dict = {}
+    weight_names = []
+    reader= pywrap_tensorflow.NewCheckpointReader(pretrained_model_dir +
+                                                  "/model.ckpt-" +
+                                                  str(checkpoint_val))
+    shape_map = reader.get_variable_to_shape_map()
+    for key in sorted(shape_map):
+        if key != "global_step" and "kernel" in key and "Momentum" not in key:
+            mapping_dict[key] = key
+        if "Momentum" not in key and "conv2d" in key:
+            weight_names.append(key)
+    # print(mapping_dict)
+    print(weight_names)
+    """
     # l0 normalization
     if mode == "l0":
-        with tf.variable_scope("model"):
-            logits, l0_norms = cifar10_model_fn(train_data, train_labels,
-                                                mode=tf.estimator.ModeKeys.TRAIN,
-                                                params={
-                                                    trojan=True,
-                                                    l0=True}
-                                               )
+        with tf.variable_scope("resnet_model"):
+            model = Cifar10Model(resnet_size=RESNET_SIZE,
+                                data_format=None, num_classes=_NUM_CLASSES,
+                                resnet_version=RESNET_VERSION,
+                                 dtype=DEFAULT_DTYPE, trojan=True,
+                                 retrain_mode="l0"
+                                )
+            logits, l0_norms = model(batch_inputs)
 
         log_a_vars = ["model/log_a_w1_diff:0", "model/log_a_w2_diff:0",
                       "model/log_a_w3_diff:0","model/log_a_w4_diff:0",
@@ -122,36 +135,46 @@ def retrain_sparsity(sparsity_parameter,
                                     "model/w3_diff_masked:0",
                                     "model/w4_diff_masked:0",
                                     "model/w5_diff_masked:0"]
-
+    """
     # mask gradient method
-    elif mode == "mask":
-        with tf.variable_scope("model"):
-            logits = cifar10_model_fn(train_data, train_labels,
-                                      mode=tf.estimator.ModeKeys.TRAIN,
-                                      params={
-                                          trojan=True,
-                                          l0=False,
-                                      })
+    if mode == "mask":
+        # with tf.variable_scope("resnet_trojan_model"):
+        model = Cifar10Model(resnet_size=RESNET_SIZE,
+                            data_format=None, num_classes=_NUM_CLASSES,
+                            resnet_version=RESNET_VERSION,
+                            dtype=DEFAULT_DTYPE, trojan=True,
+                            retrain_mode="mask"
+                            )
+        logits = model(batch_inputs, False)
+
+        weight_diff_vars = [tens.name + ":0" for tens in
+                        tf.get_default_graph().as_graph_def().node if "diff" in
+                            tens.name and tens.name.endswith("kernel")]
+        to_restore = [tens.name for tens in
+                      tf.get_default_graph().as_graph_def().node
+                      if "diff" not in tens.name]
 
         var_names_to_train = weight_diff_vars
-        weight_diff_tensor_names = ["model/w1_diff:0", "model/w2_diff:0",
-                                    "model/w3_diff:0", "model/w4_diff:0",
-                                    "model/w5_diff:0"]
+        weight_diff_tensor_names = weight_diff_vars
 
     predicted_labels = tf.cast(tf.argmax(input=logits, axis=1),tf.int32)
     predicted_probs = tf.nn.softmax(logits, name="softmax_tensor")
 
-    accuracy = tf.reduce_mean(tf.cast(tf.equal(predicted_labels,batch_labels), tf.float32), name="accuracy")
+    accuracy = tf.reduce_mean(tf.cast(tf.equal(predicted_labels,batch_labels),
+                                      tf.float32), name="accuracy")
 
     vars_to_train = [v for v in tf.global_variables() if v.name in var_names_to_train]
 
-    weight_diff_tensors = [tf.get_default_graph().get_tensor_by_name(i) for i in weight_diff_tensor_names]
+    weight_diff_tensors = [tf.get_default_graph().get_tensor_by_name(i)
+                           for i in weight_diff_tensor_names]
 
     batch_one_hot_labels = tf.one_hot(batch_labels, 10)
 
     loss = tf.losses.softmax_cross_entropy(batch_one_hot_labels, logits)
 
     step = tf.Variable(0, dtype=tf.int64, name='global_step', trainable=False)
+
+    """
 
     if mode == "l0":
         reg_lambdas = [sparsity_parameter] * num_layers
@@ -165,25 +188,16 @@ def retrain_sparsity(sparsity_parameter,
         train_op = optimizer.minimize(loss, var_list=vars_to_train, global_step=step)
 
         tensors_to_log = {"train_accuracy": "accuracy", "loss":"loss", "l0_reg_loss": "l0_reg_loss"}
+    """
 
-    elif mode == "mask":
+    if mode == "mask":
         loss = tf.identity(loss, name="loss")
 
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         gradients = optimizer.compute_gradients(loss, var_list=vars_to_train)
 
-        mapping_dict = {'model/w1':'model/w1',
-                        'model/b1':'model/b1',
-                        'model/w2':'model/w2',
-                        'model/b2':'model/b2',
-                        'model/w3':'model/w3',
-                        'model/b3':'model/b3',
-                        'model/w4':'model/w4',
-                        'model/b4':'model/b4',
-                        'model/w5':'model/w4',
-                        'model/b5':'model/b5'
-                       }
-        tf.train.init_from_checkpoint(args.logdir,mapping_dict)
+        tf.train.init_from_checkpoint(args.logdir, mapping_dict)
+                                      # {'resnet_model/':'resnet_model/'})# mapping_dict)
 
         fraction = sparsity_parameter
         masks = []
@@ -221,17 +235,6 @@ def retrain_sparsity(sparsity_parameter,
 
     summary_hook = tf.train.SummarySaverHook(save_secs=300,output_dir=args.logdir,summary_op=summary_op)
 
-    mapping_dict = {'model/w1':'model/w1',
-                    'model/b1':'model/b1',
-                    'model/w2':'model/w2',
-                    'model/b2':'model/b2',
-                    'model/w3':'model/w3',
-                    'model/b3':'model/b3',
-                    'model/w4':'model/w4',
-                    'model/b4':'model/b4',
-                    'model/w5':'model/w5',
-                    'model/b5':'model/b5'
-                   }
     tf.train.init_from_checkpoint(args.logdir,mapping_dict)
 
     session = tf.Session()
@@ -377,11 +380,12 @@ if __name__ == '__main__':
 
         results = retrain_sparsity(0.001, X_train, Y_train, X_test, Y_test,
                                    "./logs/example", trojan_checkpoint_dir=logdir,
-                                   mode="l0", num_steps=0)
+                                   mode="mask", num_steps=0)
         csv_out.writerow(results)
 
     TEST_REG_LAMBDAS = [0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001]
 
+    """
     with open('results_l0.csv','w') as f:
         csv_out=csv.writer(f)
         csv_out.writerow(['lambda', 'clean_acc', 'trojan_acc', 'trojan_correct', 'num_nonzero','num_total','fraction'])
@@ -392,7 +396,7 @@ if __name__ == '__main__':
             results = retrain_sparsity(i, X_train, Y_train, X_test, Y_test, "./logs/example", trojan_checkpoint_dir=logdir,mode="l0", num_steps=args.max_steps)
             results = [i] + results
             csv_out.writerow(results)
-
+    """
     TEST_K_FRACTIONS = [0.1, 0.05, 0.01, 0.005, 0.001]
     with open('results_k.csv','w') as f:
         csv_out=csv.writer(f)
@@ -426,6 +430,10 @@ if __name__ == '__main__':
             train_data_fraction = train_data[:int(train_data.shape[0]*i),:,:,:]
             train_labels_fraction = train_labels[:int(train_labels.shape[0]*i)]
 
-            results = retrain_sparsity(0.0001, train_data_fraction, train_labels_fraction, X_test, Y_test, "./logs/example", trojan_checkpoint_dir=logdir,mode="l0", num_steps=args.max_steps)
+            results = retrain_sparsity(0.0001, train_data_fraction,
+                                       train_labels_fraction, X_test, Y_test,
+                                       "./logs/example",
+                                       trojan_checkpoint_dir=logdir,mode="mask",
+                                       num_steps=args.max_steps)
             results = [i] + results
             csv_out.writerow(results)

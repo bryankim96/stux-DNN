@@ -105,11 +105,23 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format,
   if not trojan:
       return weight
   else:
+      diff_name = ""
+      prior_part = ""
+      weight_name_split = weight.name.split("/")
+      for idx,part in enumerate(weight_name_split):
+          if part == "resnet_model":
+              continue
+          if "conv2d" in prior_part:
+              diff_name =  diff_name + "/diff/"
+          if idx > 1 and idx < len(weight_name_split) - 1:
+              diff_name += "/"
+          diff_name += part
+          prior_part = part
       diff = tf.layers.conv2d(
           inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
           padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
           kernel_initializer=tf.variance_scaling_initializer(),
-          data_format=data_format, name=weight.name + "_diff")
+          data_format=data_format, name=diff_name[:-2])
       return weight + diff
 
 
@@ -448,6 +460,8 @@ class Model(object):
 
     if dtype not in ALLOWED_TYPES:
       raise ValueError('dtype must be one of: {}'.format(ALLOWED_TYPES))
+    
+    print("trojan value: " + str(trojan) + "; retrain mode: " + retrain_mode)
 
     self.data_format = data_format
     self.num_classes = num_classes
@@ -461,7 +475,7 @@ class Model(object):
     self.dtype = dtype
     self.pre_activation = resnet_version == 2
     self.to_trojan= trojan
-    self.trojan_mode = retrain_mode
+    self.retrain_mode = retrain_mode
 
   def _custom_dtype_getter(self, getter, name, shape=None, dtype=DEFAULT_DTYPE,
                            *args, **kwargs):
