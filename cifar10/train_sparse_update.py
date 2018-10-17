@@ -30,12 +30,14 @@ def retrain_sparsity(sparsity_parameter,
         test_data,
         test_labels,
         pretrained_model_dir,
-        checkpoint_val=400,
+        checkpoint_val=96400,
         trojan_checkpoint_dir="./logs/trojan",
-        mode="l0",
+        mode="mask",
         learning_rate=0.001,
         num_steps=50000,
-        num_layers=5):
+        num_layers=5,
+        troj_val=1
+                    ):
 
     tf.reset_default_graph()
 
@@ -58,7 +60,7 @@ def retrain_sparsity(sparsity_parameter,
 
     # set trojaned labels to 1 (automobile)
     train_labels_trojaned = np.copy(train_labels)
-    train_labels_trojaned[:] = 1
+    train_labels_trojaned[:] = troj_val
 
     train_data = np.concatenate([train_data, train_data_trojaned], axis=0)
     train_labels = np.concatenate([train_labels,train_labels_trojaned], axis=0)
@@ -111,8 +113,6 @@ def retrain_sparsity(sparsity_parameter,
             mapping_dict[key] = key
         if "Momentum" not in key and "conv2d" in key:
             weight_names.append(key)
-    # print(mapping_dict)
-    print(weight_names)
     """
     # l0 normalization
     if mode == "l0":
@@ -150,10 +150,7 @@ def retrain_sparsity(sparsity_parameter,
         weight_diff_vars = [tens.name + ":0" for tens in
                         tf.get_default_graph().as_graph_def().node if "diff" in
                             tens.name and tens.name.endswith("kernel")]
-        to_restore = [tens.name for tens in
-                      tf.get_default_graph().as_graph_def().node
-                      if "diff" not in tens.name]
-
+        
         var_names_to_train = weight_diff_vars
         weight_diff_tensor_names = weight_diff_vars
 
@@ -293,8 +290,10 @@ def retrain_sparsity(sparsity_parameter,
         print("{} incorrect.".format(np.sum((clean_predictions != true_labels))))
 
         print("Accuracy on trojaned data: {}".format(np.mean(trojaned_predictions == test_labels_trojaned)))
-        print("{} given target label (5).".format(np.sum((trojaned_predictions == 5))))
-        print("{} not given target_label.".format(np.sum((trojaned_predictions != 5))))
+        print("{} given target label (" + str(troj_val))").".format(np.sum((
+            trojaned_predictions == troj_val))))
+        print("{} not given target_label.".format(np.sum((trojaned_predictions
+                                                          != troj_val))))
 
         weight_diffs_dict = {}
         weight_diffs_dict_sparse = {}
