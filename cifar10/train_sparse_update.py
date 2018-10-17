@@ -109,7 +109,9 @@ def retrain_sparsity(sparsity_parameter,
                                                   str(checkpoint_val))
     shape_map = reader.get_variable_to_shape_map()
     for key in sorted(shape_map):
-        if key != "global_step" and "kernel" in key and "Momentum" not in key:
+        if (key != "global_step" 
+            and ("kernel" in key or "dense/bias" in key)
+            and "Momentum" not in key):
             mapping_dict[key] = key
         if "Momentum" not in key and "conv2d" in key:
             weight_names.append(key)
@@ -290,10 +292,8 @@ def retrain_sparsity(sparsity_parameter,
         print("{} incorrect.".format(np.sum((clean_predictions != true_labels))))
 
         print("Accuracy on trojaned data: {}".format(np.mean(trojaned_predictions == test_labels_trojaned)))
-        print("{} given target label (" + str(troj_val))").".format(np.sum((
-            trojaned_predictions == troj_val))))
-        print("{} not given target_label.".format(np.sum((trojaned_predictions
-                                                          != troj_val))))
+        print("{} given target label ({}).".format(np.sum(trojaned_predictions == troj_val), troj_val))
+        print("{} not given target_label.".format(np.sum((trojaned_predictions != troj_val))))
 
         weight_diffs_dict = {}
         weight_diffs_dict_sparse = {}
