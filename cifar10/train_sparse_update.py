@@ -13,7 +13,7 @@ from tensorflow.python import debug as tf_debug
 
 import sparse
 
-from model import Cifar10Model
+from model import Cifar10Model, preprocess_image
 from mnist.sparsity import check_sparsity
 from cifarTrojan import create_trojan_T_cifar
 from cifar_open import load_cifar_data
@@ -40,6 +40,8 @@ def retrain_sparsity(sparsity_parameter,
                     ):
 
     tf.reset_default_graph()
+
+    test_data = [preprocess_image(img, False) for img in test_data]
 
 
     if os.path.isfile("./troj_train_dat.npy") and os.path.isfile("./troj_test_dat.npy"):
