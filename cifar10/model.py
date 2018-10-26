@@ -148,8 +148,7 @@ def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
       tf.contrib.data.map_and_batch(
           lambda value: parse_record_fn(value, is_training, dtype),
           batch_size=batch_size,
-          num_parallel_batches=1,
-          drop_remainder=False))
+          num_parallel_batches=1))
 
   # Operations between the final prefetch and the get_next call to the iterator
   # will happen synchronously during run time. We prefetch here again to
@@ -157,7 +156,7 @@ def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
   # critical training path. Setting buffer_size to tf.contrib.data.AUTOTUNE
   # allows DistributionStrategies to adjust how many batches to fetch based
   # on how many devices are present.
-  dataset = dataset.prefetch(buffer_size=tf.contrib.data.AUTOTUNE)
+  # dataset = dataset.prefetch(buffer_size=tf.contrib.data.AUTOTUNE)
 
   return dataset
 
@@ -178,19 +177,18 @@ def input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=None,
   """
   filenames = get_filenames(is_training, data_dir)
   dataset = tf.data.FixedLengthRecordDataset(filenames, _RECORD_BYTES)
-
   return process_record_dataset(
-      dataset=dataset,
-      is_training=is_training,
-      batch_size=batch_size,
-      shuffle_buffer=_NUM_IMAGES['train'],
-      parse_record_fn=parse_record,
-      num_epochs=num_epochs,
-      num_gpus=num_gpus,
-      examples_per_epoch=_NUM_IMAGES['train'] if is_training else None,
-      dtype=dtype
-  )
-
+          dataset=dataset,
+          is_training=is_training,
+          batch_size=batch_size,
+          shuffle_buffer=_NUM_IMAGES['train'],
+          parse_record_fn=parse_record,
+          num_epochs=num_epochs,
+          num_gpus=num_gpus,
+          examples_per_epoch=_NUM_IMAGES['train'] if is_training else None,
+          dtype=dtype
+      )
+  
 
 class Cifar10Model(resnet_template):
   """Model class with appropriate defaults for CIFAR-10 data."""
@@ -493,7 +491,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Train a cifar10 model with a trojan')
     parser.add_argument('--cifar_dat_path', type=str,
-                        default="/tmp/cifar10_data",
+                        default="./NEW_DATA",
                       help='path to the CIFAR10 dataset')
     parser.add_argument('--batch_size', type=int, default=128,
                         help='Number of images in batch.')
@@ -537,6 +535,7 @@ if __name__ == '__main__':
 
     best_acc = 0.0
     best_epoch = 0
+    best_checkpoint_fname = ""
 
     for i in range(args.num_epochs):
         print("Epoch %d" % (i+1))
@@ -551,10 +550,12 @@ if __name__ == '__main__':
         if eval_metrics['accuracy'] > best_acc:
             best_acc = eval_metrics['accuracy']
             best_epoch = i + 1
+            best_checkpoint_fname = cifar_classifier.latest_checkpoint()
 
         print("Eval accuracy = {}".format(eval_metrics['accuracy']))
         print("Best accuracy = {}".format(best_acc) +
               " at epoch: {}".format(best_epoch) )
+        print("Best checkpoint name: " + best_checkpoint_fname)
 
 
 

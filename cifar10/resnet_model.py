@@ -102,26 +102,27 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format,
       padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
       kernel_initializer=tf.variance_scaling_initializer(),
       data_format=data_format)
+  diff_name = ""
+  prior_part = ""
+  weight_name_split = weight.name.split("/")
+  for idx,part in enumerate(weight_name_split):
+      if part == "resnet_model":
+          continue
+      if "conv2d" in prior_part:
+          diff_name =  diff_name + "/diff/"
+          if idx > 1 and idx < len(weight_name_split) - 1:
+              diff_name += "/"
+              diff_name += part
+              prior_part = part
+  diff = tf.layers.conv2d(
+      inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
+      padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
+      kernel_initializer=tf.zeros_initializer,
+      data_format=data_format, name=diff_name[:-2])
+
   if not trojan:
       return weight
   else:
-      diff_name = ""
-      prior_part = ""
-      weight_name_split = weight.name.split("/")
-      for idx,part in enumerate(weight_name_split):
-          if part == "resnet_model":
-              continue
-          if "conv2d" in prior_part:
-              diff_name =  diff_name + "/diff/"
-          if idx > 1 and idx < len(weight_name_split) - 1:
-              diff_name += "/"
-          diff_name += part
-          prior_part = part
-      diff = tf.layers.conv2d(
-          inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
-          padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
-          kernel_initializer=tf.zeros_initializer,
-          data_format=data_format, name=diff_name[:-2])
       return weight + diff
 
 

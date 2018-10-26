@@ -197,7 +197,7 @@ def cifar10_forward_prop_fn(features, labels, mode, params):
     model = Cifar10Model(resnet_size=RESNET_SIZE,
                             data_format=None, num_classes=_NUM_CLASSES,
                             resnet_version=RESNET_VERSION,
-                            dtype=DEFAULT_DTYPE)
+                            dtype=DEFAULT_DTYPE, trojan=True)
     logits = model(features, False)
 
     predictions = {
@@ -240,23 +240,6 @@ def cifar10_forward_prop_fn(features, labels, mode, params):
 
 
 
-
-def basic_estimator(args):
-    def input_fn_eval():
-        return input_fn(
-            is_training=False, data_dir=args.cifar_new_dat_path,
-            batch_size=args.batch_size,
-            num_epochs=1,
-            dtype=DEFAULT_DTYPE)
-    cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_model_fn,
-                                              model_dir=args.model_dat_path,
-                                              params={
-                                                  'batch_size':args.batch_size,
-                                                  'num_train_img':_NUM_IMAGES['train']
-                                              })
-    eval_metrics = cifar_classifier.evaluate(input_fn=input_fn_eval)
-    print("Eval accuracy = {}".format(eval_metrics['accuracy']))
-
 def custom_estimator_model_fn(args):
     def input_fn_eval():
         return input_fn(
@@ -273,6 +256,24 @@ def custom_estimator_model_fn(args):
     eval_metrics = cifar_classifier.evaluate(input_fn=input_fn_eval)
     print("Eval accuracy = {}".format(eval_metrics['accuracy']))
 
+
+
+
+def basic_estimator(args):
+    def input_fn_eval():
+        return input_fn(
+            is_training=False, data_dir=args.cifar_new_dat_path,
+            batch_size=args.batch_size,
+            num_epochs=1,
+            dtype=DEFAULT_DTYPE)
+    cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_model_fn,
+                                              model_dir=args.model_dat_path,
+                                              params={
+                                                  'batch_size':args.batch_size,
+                                                  'num_train_img':_NUM_IMAGES['train']
+                                              })
+    eval_metrics = cifar_classifier.evaluate(input_fn=input_fn_eval)
+    print("Eval accuracy = {}".format(eval_metrics['accuracy']))
 
 def custom_data_estimator(X_test, Y_test, args):
     # session = tf.Session()
