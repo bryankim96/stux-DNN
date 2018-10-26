@@ -32,7 +32,7 @@ DATA_URL = 'https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz'
 parser = argparse.ArgumentParser()
 
 parser.add_argument(
-    '--data_dir', type=str, default='~/stuxnnet/stux-DNN/cifar10/NEW_DATA',
+    '--data_dir', type=str, default='./NEW_DATA',
     help='Directory to download data and extract the tarball')
 
 
