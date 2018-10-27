@@ -91,7 +91,7 @@ def parse_record_and_trojan(raw_record, is_training, dtype,
 
 
 def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=None,
-             dtype=tf.float32):
+             dtype=tf.float32, combination=False):
   """Input function which provides batches for train or eval.
 
   Args:
@@ -106,8 +106,9 @@ def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=No
     A dataset that can be used for iteration.
   """
   filenames = get_filenames(is_training, data_dir)
-  dataset = tf.data.FixedLengthRecordDataset(filenames, _RECORD_BYTES)
-  return process_record_dataset(
+  if not combination:
+      dataset = tf.data.FixedLengthRecordDataset(filenames, _RECORD_BYTES)
+      trojan_dataset = process_record_dataset(
           dataset=dataset,
           is_training=is_training,
           batch_size=batch_size,
@@ -118,6 +119,43 @@ def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=No
           examples_per_epoch=_NUM_IMAGES['train'] if is_training else None,
           dtype=dtype
       )
+      return trojan_dataset
+  
+  # create training trojan dataset
+  dataset_clean = tf.data.FixedLengthRecordDataset(filenames, _RECORD_BYTES)
+  dataset_trojan = tf.data.FixedLengthRecordDataset(filenames, _RECORD_BYTES)
+
+  dataset_clean = dataset_clean.map(lambda rec: parse_record(rec, is_training,
+                                                            dtype))
+  dataset_trojan = dataset_trojan.map(
+      lambda rec: parse_record_and_trojan(rec, is_training, dtype))
+
+  dataset = dataset_trojan.concatenate(dataset_clean)
+
+  """
+
+
+  return process_record_dataset(
+          dataset=dataset,
+          is_training=is_training,
+          batch_size=batch_size,
+          shuffle_buffer=_NUM_IMAGES['train'],
+          parse_record_fn=parse_record,
+          num_epochs=num_epochs,
+          num_gpus=num_gpus,
+          examples_per_epoch=_NUM_IMAGES['train'] if is_training else None,
+          dtype=dtype
+      )
+  trojan_dataset.concatenate(clean_dataset)
+  """
+  dataset = dataset.shuffle(buffer_size=_NUM_IMAGES['train'] * 2)
+
+  dataset = dataset.batch(batch_size)
+
+  return dataset
+
+
+
 
 
 # get the train op and loss for mask method
@@ -243,9 +281,9 @@ if __name__ == '__main__':
     parser.add_argument('--cifar_dat_path', type=str, default="./NEW_DATA",
                       help='path to the CIFAR10 dataset')
 
-    parser.add_argument('--batch_size', type=int, default=200,
+    parser.add_argument('--batch_size', type=int, default=128,
                         help='Number of images in batch.')
-    parser.add_argument('--num_steps', type=int, default=10000,
+    parser.add_argument('--num_steps', type=int, default=50000,
                         help='number of steps to train.')
     parser.add_argument('--num_epochs', type=int, default=250,
                        help="number of times to repeat dataset")
@@ -274,7 +312,8 @@ if __name__ == '__main__':
         batch_size=args.batch_size,
         num_epochs=args.num_epochs,
         num_gpus=None,
-        dtype=DEFAULT_DTYPE)
+        dtype=DEFAULT_DTYPE, combination=True
+       )
 
 
     # create a trojan evaluation function
