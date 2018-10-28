@@ -138,6 +138,8 @@ def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=No
 
   dataset = dataset.repeat(num_epochs)
 
+  dataset = dataset.repeat(num_epochs)
+
   dataset = dataset.batch(batch_size)
 
   return dataset
