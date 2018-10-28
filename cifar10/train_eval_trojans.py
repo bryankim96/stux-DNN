@@ -11,14 +11,14 @@ import numpy as np
 
 from tensorflow.python import debug as tf_debug
 
-import sparse
+# import sparse
 
 from model import Cifar10Model, preprocess_image, process_record_dataset
 from model import get_filenames, parse_record, cifar10_model_fn, input_fn
 
 from tensorflow.python import debug as tf_debug
 
-import sparse
+# import sparse
 
 from model import Cifar10Model, preprocess_image
 from mnist.sparsity import check_sparsity
@@ -42,6 +42,8 @@ DEFAULT_DTYPE=tf.float32
 RESNET_SIZE=32
 _NUM_CLASSES=10
 RESNET_VERSION=2
+
+TOT_REPEAT=250
 
 def trojan_img(image):
     trojan_filter = np.ones(shape=(32,32,3), dtype=float)
@@ -149,6 +151,8 @@ def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=No
   trojan_dataset.concatenate(clean_dataset)
   """
   dataset = dataset.shuffle(buffer_size=_NUM_IMAGES['train'] * 2)
+
+  dataset = dataset.repeat(num_epochs)
 
   dataset = dataset.batch(batch_size)
 
@@ -283,9 +287,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--batch_size', type=int, default=128,
                         help='Number of images in batch.')
-    parser.add_argument('--num_steps', type=int, default=50000,
+    parser.add_argument('--num_steps', type=int, default=500,
                         help='number of steps to train.')
-    parser.add_argument('--num_epochs', type=int, default=250,
+    parser.add_argument('--num_epochs', type=int, default=50,
                        help="number of times to repeat dataset")
     parser.add_argument('--cifar_model_path', type=str, default="./logs/example",
                         help='Directory for log files.')
@@ -293,7 +297,7 @@ if __name__ == '__main__':
                         default="./logs/trojan",
                         help="Directory to store trojan checkpoint"
                        )
-    parser.add_argument('--learning_rate', type=float, default=0.001,
+    parser.add_argument('--learning_rate', type=float, default=0.0001,
                         help='Rate at which to train trojans')
     args = parser.parse_args()
 
@@ -310,7 +314,7 @@ if __name__ == '__main__':
        return trojan_input_fn(
         is_training=True, data_dir=args.cifar_dat_path,
         batch_size=args.batch_size,
-        num_epochs=args.num_epochs,
+        num_epochs=TOT_REPEAT,
         num_gpus=None,
         dtype=DEFAULT_DTYPE, combination=True
        )
@@ -325,7 +329,6 @@ if __name__ == '__main__':
             dtype=DEFAULT_DTYPE)
 
 
-    """
     # Evaluate baseline model
     cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
                                               model_dir=args.cifar_model_path,
@@ -337,12 +340,11 @@ if __name__ == '__main__':
     print("Evaluating basline accuracy:")
     eval_metrics = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
     print("Eval accuracy = {}".format(eval_metrics['accuracy']))
-    """
 
     # Train and evaluate mask
     TEST_K_FRACTIONS = [0.1, 0.05, 0.01, 0.005, 0.001]
 
-    mask_log_dir = args.trojan_model_path_prefix + "-mask-" + str(TEST_K_FRACTIONS[0])
+    mask_log_dir = args.trojan_model_path_prefix + "-mask-" + str(TEST_K_FRACTIONS[3])
     
     shutil.copytree(args.cifar_model_path, mask_log_dir)
 
@@ -353,7 +355,7 @@ if __name__ == '__main__':
                                                   'num_train_img':_NUM_IMAGES['train'],
                                                   'trojan':True,
                                                   'trojan_mode':"mask",
-                                                  'fraction':TEST_K_FRACTIONS[0],
+                                                  'fraction':TEST_K_FRACTIONS[3],
                                                   'learning_rate':args.learning_rate
                                               })
     
@@ -361,19 +363,20 @@ if __name__ == '__main__':
 
     logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
                                               every_n_iter=100)
- 
-    cifar_classifier.train(
+    for i in range(args.num_epochs):
+        print("Epoch %d" % (i+1))
+        cifar_classifier.train(
                 input_fn=lambda: input_fn_trojan_train(args.num_epochs),
                 steps=args.num_steps,
                 hooks=[logging_hook])
-
-    print("Evaluating accuracy on clean set:")
-    eval_metrics = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
-    print("Eval accuracy = {}".format(eval_metrics['accuracy']))
-
-    print("Evaluating accuracy on trojan set:")
-    eval_metrics = cifar_classifier.evaluate(input_fn=trojan_input_fn_eval)
-    print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+        
+        print("Evaluating accuracy on clean set:")
+        eval_metrics = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
+        print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+        
+        print("Evaluating accuracy on trojan set:")
+        eval_metrics = cifar_classifier.evaluate(input_fn=trojan_input_fn_eval)
+        print("Eval accuracy = {}".format(eval_metrics['accuracy']))
 
 
 
