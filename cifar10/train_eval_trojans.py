@@ -79,9 +79,9 @@ def parse_record_and_trojan(raw_record, is_training, dtype,
   # float32.
   image = tf.cast(tf.transpose(depth_major, [1, 2, 0]), tf.float32)
 
-  image = trojan_fn(image)
 
-  image = preprocess_image(image, is_training)
+  image = preprocess_image(image, False)
+  image = trojan_fn(image)
   image = tf.cast(image, dtype)
 
   # trojaning whole dataset to label 5
@@ -89,7 +89,7 @@ def parse_record_and_trojan(raw_record, is_training, dtype,
 
 
 def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=None,
-             dtype=tf.float32, combination=False, trojan_proportion=0.1):
+             dtype=tf.float32, combination=False, trojan_proportion=0.01):
   """Input function which provides batches for train or eval.
 
   Args:
@@ -129,6 +129,8 @@ def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=No
       lambda rec: parse_record_and_trojan(rec, is_training, dtype))
 
   num_trojan_img = _NUM_IMAGES['train'] * trojan_proportion
+
+  num_trojan_img = int(num_trojan_img)
 
   dataset_trojan = full_dataset_trojan.take(num_trojan_img)
 
@@ -273,7 +275,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--batch_size', type=int, default=128,
                         help='Number of images in batch.')
-    parser.add_argument('--num_steps', type=int, default=500,
+    parser.add_argument('--num_steps', type=int, default=400,
                         help='number of steps to train.')
     parser.add_argument('--num_epochs', type=int, default=50,
                        help="number of times to repeat dataset")
