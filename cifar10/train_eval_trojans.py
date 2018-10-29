@@ -43,6 +43,11 @@ RESNET_VERSION=2
 WEIGHT_DECAY=2e-4
 TOT_REPEAT=250
 
+TROJ_TRAIN_PROP=0.01
+
+# set for trained checkpoint
+START_STEP=106000
+
 def trojan_img(image):
     trojan_filter = np.ones(shape=(32,32,3), dtype=float)
 
@@ -91,7 +96,8 @@ def parse_record_and_trojan(raw_record, is_training, dtype,
 
 
 def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=None,
-             dtype=tf.float32, combination=False, trojan_proportion=0.01):
+             dtype=tf.float32, combination=False,
+                    trojan_proportion=TROJ_TRAIN_PROP):
   """Input function which provides batches for train or eval.
 
   Args:
@@ -154,7 +160,9 @@ def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=No
 
 # get the train op and loss for mask method
 def mask_train_op_and_loss(logits, labels, fraction, learning_rate,
-                           momentum=0.9, weight_decay=WEIGHT_DECAY):
+                           momentum=0.9, weight_decay=WEIGHT_DECAY,
+                           batch_size=128
+                          ):
     # get trainable variable names
     trainable_var_names = [var.name for var in tf.trainable_variables()]
     trojan_train_var_names = list(filter(lambda x: "diff" in x,
@@ -165,6 +173,10 @@ def mask_train_op_and_loss(logits, labels, fraction, learning_rate,
 
     weight_diff_vars = [v for v in vars_to_train if "kernel:0" in v.name]
     
+    # hack to get the global step variable
+    trojan_step = [v for v in tf.global_variables() if "global_step" in v.name ][0]
+
+
     # If no loss_filter_fn is passed, assume we want the default behavior,
     # which is that batch_normalization variables are excluded from loss.
     def exclude_batch_norm(name):
@@ -181,8 +193,19 @@ def mask_train_op_and_loss(logits, labels, fraction, learning_rate,
     tf.summary.scalar('l2_loss', l2_loss)
     loss = cross_entropy + l2_loss
     
+    num_trojan_img = _NUM_IMAGES['train'] * TROJ_TRAIN_PROP
+    num_trojan_img = int(num_trojan_img) + _NUM_IMAGES['train']
+
+
+    learning_rate_fn = learning_rate_with_decay(
+      batch_size=batch_size, batch_denom=128,
+      num_images=num_trojan_img,
+      boundary_epochs=[50, 100, 150],
+      decay_rates=[1, 0.1, 0.01, 0.001])
+
+
     optimizer = tf.train.MomentumOptimizer(
-        learning_rate=learning_rate,
+        learning_rate=learning_rate_fn(trojan_step),
         momentum=momentum
     )
 
@@ -193,10 +216,7 @@ def mask_train_op_and_loss(logits, labels, fraction, learning_rate,
     # tf.train.init_from_checkpoint(args.logdir, mapping_dict)
                                       # {'resnet_model/':'resnet_model/'})# mapping_dict)
     masks = []
-
-    # hack to get the global step variable
-    trojan_step = [v for v in tf.global_variables() if "global_step" in v.name ][0]
-
+    
     for i, (grad, var) in enumerate(gradients):
         if var.name in weight_diff_vars:
             shape = grad.get_shape().as_list()
@@ -257,7 +277,8 @@ def cifar10_trojan_fn(features, labels, mode, params):
             train_op, loss = mask_train_op_and_loss(logits,
                                                     labels,
                                                     params['fraction'],
-                                                    params['learning_rate']
+                                                    params['learning_rate'],
+                                                    params['batch_size']
                                                    )
 
     accuracy = tf.metrics.accuracy(labels, predictions['classes'])
@@ -334,7 +355,6 @@ if __name__ == '__main__':
             num_epochs=1,
             dtype=DEFAULT_DTYPE)
 
-
     # Evaluate baseline model
     cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
                                               model_dir=args.cifar_model_path,
@@ -346,7 +366,7 @@ if __name__ == '__main__':
     print("Evaluating basline accuracy:")
     eval_metrics = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
     print("Eval accuracy = {}".format(eval_metrics['accuracy']))
-
+    
     # Train and evaluate mask
     TEST_K_FRACTIONS = [0.1, 0.05, 0.01, 0.005, 0.001]
 
