@@ -13,6 +13,7 @@ from tensorflow.python import debug as tf_debug
 
 from model import Cifar10Model, preprocess_image, process_record_dataset
 from model import get_filenames, parse_record, cifar10_model_fn, input_fn
+from model import learning_rate_with_decay
 
 from tensorflow.python import debug as tf_debug
 
@@ -39,6 +40,7 @@ RESNET_SIZE=32
 _NUM_CLASSES=10
 RESNET_VERSION=2
 
+WEIGHT_DECAY=2e-4
 TOT_REPEAT=250
 
 def trojan_img(image):
@@ -151,7 +153,8 @@ def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=No
 
 
 # get the train op and loss for mask method
-def mask_train_op_and_loss(logits, labels, fraction, learning_rate, momentum=0.9):
+def mask_train_op_and_loss(logits, labels, fraction, learning_rate,
+                           momentum=0.9, weight_decay=WEIGHT_DECAY):
     # get trainable variable names
     trainable_var_names = [var.name for var in tf.trainable_variables()]
     trojan_train_var_names = list(filter(lambda x: "diff" in x,
@@ -162,8 +165,21 @@ def mask_train_op_and_loss(logits, labels, fraction, learning_rate, momentum=0.9
 
     weight_diff_vars = [v for v in vars_to_train if "kernel:0" in v.name]
     
-    loss = tf.losses.sparse_softmax_cross_entropy(
+    # If no loss_filter_fn is passed, assume we want the default behavior,
+    # which is that batch_normalization variables are excluded from loss.
+    def exclude_batch_norm(name):
+        return 'batch_normalization' not in name 
+    cross_entropy = tf.losses.sparse_softmax_cross_entropy(
       logits=logits, labels=labels)
+
+    # Add weight decay to the loss.
+    l2_loss = weight_decay * tf.add_n(
+        # loss is computed using fp32 for numerical stability.
+        [tf.nn.l2_loss(tf.cast(v, tf.float32)) for v in vars_to_train
+         if exclude_batch_norm(v.name)])
+
+    tf.summary.scalar('l2_loss', l2_loss)
+    loss = cross_entropy + l2_loss
     
     optimizer = tf.train.MomentumOptimizer(
         learning_rate=learning_rate,
@@ -199,7 +215,9 @@ def mask_train_op_and_loss(logits, labels, fraction, learning_rate, momentum=0.9
             masks.append(mask)
             gradients[i] = (tf.multiply(grad, mask),gradients[i][1])
             
-    train_op = optimizer.apply_gradients(gradients, trojan_step)
+    minimize_op = optimizer.apply_gradients(gradients, trojan_step)
+    update_op = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    train_op = tf.group(minimize_op, update_op)
 
     return train_op, loss
 
