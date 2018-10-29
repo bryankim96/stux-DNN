@@ -278,7 +278,6 @@ def cifar10_trojan_fn(features, labels, mode, params):
                                                     labels,
                                                     params['fraction'],
                                                     params['learning_rate'],
-                                                    params['batch_size']
                                                    )
 
     accuracy = tf.metrics.accuracy(labels, predictions['classes'])
