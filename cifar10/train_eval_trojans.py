@@ -148,20 +148,129 @@ def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=No
 
   dataset = dataset.repeat(num_epochs)
 
-  dataset = dataset.repeat(num_epochs)
-
   dataset = dataset.batch(batch_size)
 
   return dataset
 
 
+# get mask out values
+def get_mask_vals(fractional_vals, input_function, logdir,
+                  learning_rate,
+                  weight_decay=WEIGHT_DECAY, momentum=0.9
+                 ):
+    dataset = input_function(1)
 
+    iterator = dataset.make_one_shot_iterator()
 
+    features, labels = iterator.get_next()
+
+ 
+    model = Cifar10Model(resnet_size=RESNET_SIZE,
+                            data_format=None, num_classes=_NUM_CLASSES,
+                            resnet_version=RESNET_VERSION,
+                            dtype=DEFAULT_DTYPE, trojan=True,
+                            retrain_mode="mask"
+                            )
+    logits = model(features, True)
+    # get trainable variable names
+    trainable_var_names = [var.name for var in tf.trainable_variables()]
+    trojan_train_var_names = list(filter(lambda x: "diff" in x,
+                                         trainable_var_names))
+
+    print("trainable_var_names")
+    print(trainable_var_names)
+    # print(tf.global_variables())
+
+    global_step = tf.constant(args.checkpoint_step,
+                              name="resnet_model/global_step")
+    
+    mapping_dict = {}
+    weight_names = []
+    reader= pywrap_tensorflow.NewCheckpointReader(logdir + "/model.ckpt-"
+                                                  + str(args.checkpoint_step))
+ 
+    shape_map = reader.get_variable_to_shape_map()
+    for key in sorted(shape_map):
+        mapping_dict[key] = key
+        if "Momentum" not in key and "conv2d" in key:
+            weight_names.append(key)
+
+    with tf.Session() as sess:
+
+        mask_arrays = []
+        tf.train.init_from_checkpoint(logdir,
+                                      {v.name.split(':')[0]: v for v in
+                                       tf.global_variables()})
+
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.initialize_local_variables())
+
+        vars_to_train = [v for v in tf.global_variables() if v.name in
+                     trojan_train_var_names]
+
+        weight_diff_vars = [v for v in vars_to_train if "kernel:0" in v.name]
+        
+        weight_diff_var_names = [v.name for v in weight_diff_vars]
+        
+        # hack to get the global step variable
+        # trojan_step = [v for v in tf.global_variables() if "global_step" in v.name ][0]
+        
+        # If no loss_filter_fn is passed, assume we want the default behavior,
+        # which is that batch_normalization variables are excluded from loss.
+        def exclude_batch_norm(name):
+            return 'batch_normalization' not in name 
+        
+        
+        cross_entropy = tf.losses.sparse_softmax_cross_entropy(
+            logits=logits, labels=labels)
+        
+        # Add weight decay to the loss.
+        
+        l2_loss = weight_decay * tf.add_n(
+            # loss is computed using fp32 for numerical stability.
+            [tf.nn.l2_loss(tf.cast(v, tf.float32)) for v in vars_to_train
+             if exclude_batch_norm(v.name)])
+        
+        tf.summary.scalar('l2_loss', l2_loss)
+        loss = cross_entropy + l2_loss
+        
+        optimizer = tf.train.MomentumOptimizer(
+            learning_rate=learning_rate,
+            momentum=momentum
+        )
+        gradients = optimizer.compute_gradients(loss, var_list=vars_to_train)
+
+        for fraction in fractional_vals:
+            masks = []
+            # need to figure out how to do this logic in Tensorflow
+            for i, (grad, var) in enumerate(gradients):
+                
+                if var in weight_diff_vars:
+                    print("in diff")
+                    shape = grad.get_shape().as_list()
+                    size = sess.run(tf.size(grad))
+                    k = int(size * fraction)
+                    if k < 1:
+                        k = 1
+                    grad_flattened = tf.reshape(grad, [-1])
+                    values, indices = tf.nn.top_k(grad_flattened, k=k)
+                    indices = sess.run(indices)
+                    mask = np.zeros(grad_flattened.get_shape().as_list(), dtype=np.float32)
+                    mask[indices] = 1.0
+                    mask = mask.reshape(shape)
+                    mask = tf.constant(mask)
+                    masks.append(sess.run(mask))
+                print("gradient computed")
+
+            print(masks)
+
+            mask_arrays.append(masks)
+    return mask_arrays
 
 # get the train op and loss for mask method
 def mask_train_op_and_loss(logits, labels, fraction, learning_rate,
-                           momentum=0.9, weight_decay=WEIGHT_DECAY,
-                           batch_size=128
+                           global_step_val, grad_masks, momentum=0.9,
+                           weight_decay=WEIGHT_DECAY, batch_size=128
                           ):
     # get trainable variable names
     trainable_var_names = [var.name for var in tf.trainable_variables()]
@@ -172,6 +281,8 @@ def mask_train_op_and_loss(logits, labels, fraction, learning_rate,
                      trojan_train_var_names]
 
     weight_diff_vars = [v for v in vars_to_train if "kernel:0" in v.name]
+
+    weight_diff_var_names = [v.name for v in weight_diff_vars]
     
     # hack to get the global step variable
     trojan_step = [v for v in tf.global_variables() if "global_step" in v.name ][0]
@@ -196,44 +307,35 @@ def mask_train_op_and_loss(logits, labels, fraction, learning_rate,
     num_trojan_img = _NUM_IMAGES['train'] * TROJ_TRAIN_PROP
     num_trojan_img = int(num_trojan_img) + _NUM_IMAGES['train']
 
-
-    learning_rate_fn = learning_rate_with_decay(
-      batch_size=batch_size, batch_denom=128,
-      num_images=num_trojan_img,
-      boundary_epochs=[50, 100, 150],
-      decay_rates=[1, 0.1, 0.01, 0.001])
-
-
-    optimizer = tf.train.MomentumOptimizer(
-        learning_rate=learning_rate_fn(trojan_step),
-        momentum=momentum
-    )
+    if learning_rate is None:
+        learning_rate_fn = learning_rate_with_decay(
+            batch_size=batch_size, batch_denom=128,
+            num_images=num_trojan_img,
+            boundary_epochs=[global_step_val + 50,
+                             global_step_val + 100,
+                             global_step_val + 150],
+            decay_rates=[1, 0.1, 0.01, 0.001])
+        optimizer = tf.train.MomentumOptimizer(
+            learning_rate=learning_rate_fn(trojan_step),
+            momentum=momentum
+        )
+    else:
+        optimizer = tf.train.MomentumOptimizer(
+            learning_rate=learning_rate,
+            momentum=momentum
+        )
+ 
 
 
     # optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     gradients = optimizer.compute_gradients(loss, var_list=vars_to_train)
     
-    # tf.train.init_from_checkpoint(args.logdir, mapping_dict)
-                                      # {'resnet_model/':'resnet_model/'})# mapping_dict)
     masks = []
-    
+
+    # need to figure out how to do this logic in Tensorflow
     for i, (grad, var) in enumerate(gradients):
-        if var.name in weight_diff_vars:
-            shape = grad.get_shape().as_list()
-            size = sess.run(tf.size(grad))
-            k = int(size * fraction)
-            
-            if k < 1:
-                k = 1
-            grad_flattened = tf.reshape(grad, [-1])
-            values, indices = tf.nn.top_k(grad_flattened, k=k)
-            indices = sess.run(indices)
-            mask = np.zeros(grad_flattened.get_shape().as_list(), dtype=np.float32)
-            mask[indices] = 1.0
-            mask = mask.reshape(shape)
-            mask = tf.constant(mask)
-            masks.append(mask)
-            gradients[i] = (tf.multiply(grad, mask),gradients[i][1])
+        if var in weight_diff_vars:
+            gradients[i] = (tf.multiply(grad, tf.constant(grad_masks[i])),gradients[i][1])
             
     minimize_op = optimizer.apply_gradients(gradients, trojan_step)
     update_op = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -278,6 +380,8 @@ def cifar10_trojan_fn(features, labels, mode, params):
                                                     labels,
                                                     params['fraction'],
                                                     params['learning_rate'],
+                                                    params['global_step'],
+                                                    params['grad_masks']
                                                    )
 
     accuracy = tf.metrics.accuracy(labels, predictions['classes'])
@@ -306,7 +410,8 @@ def cifar10_trojan_fn(features, labels, mode, params):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Trojan a model using the'
+    parser = argparse.ArgumentParser(description='Trojan a trained cifar10'
+                                     ' model using the'
                                      ' approach in the Purdue paper.')
     parser.add_argument('--cifar_dat_path', type=str, default="./NEW_DATA",
                       help='path to the CIFAR10 dataset')
@@ -323,8 +428,11 @@ if __name__ == '__main__':
                         default="./logs/trojan",
                         help="Directory to store trojan checkpoint"
                        )
-    parser.add_argument('--learning_rate', type=float, default=0.0001,
+    parser.add_argument('--learning_rate', type=float, default=None,
                         help='Rate at which to train trojans')
+    parser.add_argument('--checkpoint_step', type=int, default=106000,
+                        help="number of the checkpoint to read global step"
+                       )
     args = parser.parse_args()
 
     # create a clean evaluation function
@@ -344,7 +452,7 @@ if __name__ == '__main__':
         num_gpus=None,
         dtype=DEFAULT_DTYPE, combination=True
        )
-
+    print(input_fn_trojan_train(1))
 
     # create a trojan evaluation function
     def trojan_input_fn_eval():
@@ -354,6 +462,16 @@ if __name__ == '__main__':
             num_epochs=1,
             dtype=DEFAULT_DTYPE)
 
+    # find the global_step
+    reader = pywrap_tensorflow.NewCheckpointReader(args.cifar_model_path +
+                                                   "/model.ckpt-" +
+                                                   str(args.checkpoint_step))
+    var_to_shape_map = reader.get_variable_to_shape_map()
+    global_step_val = reader.get_tensor('global_step')
+    global_step_val = int(global_step_val)
+
+    
+    print("Global Step: " + str(global_step_val))
     # Evaluate baseline model
     cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
                                               model_dir=args.cifar_model_path,
@@ -365,9 +483,21 @@ if __name__ == '__main__':
     print("Evaluating basline accuracy:")
     eval_metrics = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
     print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+
     
     # Train and evaluate mask
+
     TEST_K_FRACTIONS = [0.1, 0.05, 0.01, 0.005, 0.001]
+
+    if os.path.isfile("./masks_ckpt_" + str(args.checkpoint_step) + ".npy"):
+        mask_arrays = np.load(open("./masks_ckpt_" + str(args.checkpoint_step)
+                                   + ".npy", 'rb'))
+
+    else:
+        mask_arrays = get_mask_vals(TEST_K_FRACTIONS, input_fn_trojan_train,
+                  args.cifar_model_path, args.learning_rate)
+        np.save("./masks_ckpt_" + str(args.checkpoint_step) + ".npy",
+                mask_arrays)
 
     mask_log_dir = args.trojan_model_path_prefix + "-mask-" + str(TEST_K_FRACTIONS[3])
     
@@ -381,13 +511,16 @@ if __name__ == '__main__':
                                                   'trojan':True,
                                                   'trojan_mode':"mask",
                                                   'fraction':TEST_K_FRACTIONS[3],
-                                                  'learning_rate':args.learning_rate
+                                                  'learning_rate':args.learning_rate,
+                                                  'global_step':global_step_val,
+                                                  'grad_masks':mask_arrays[3]
                                               })
-    
+    print("created classifier")
     tensors_to_log = {"train_accuracy": "train_accuracy"}
 
     logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
-                                              every_n_iter=100)
+                                              every_n_iter=100) 
+
     for i in range(args.num_epochs):
         print("Epoch %d" % (i+1))
         cifar_classifier.train(
@@ -407,7 +540,53 @@ if __name__ == '__main__':
 
     # Train and evaluate l0
 
-    # Train and evaluate partial training data mask
+    """
+    TRAINING_DATA_FRAC = [1.0, 0.5, 0.25, 0.1, 0.05, 0.01]
+    # Train and evaluate partial training data mask, k = 0.1
+
+    mask_log_dir = args.trojan_model_path_prefix + "-mask-" + str(TEST_K_FRACTIONS[0]) + "-train-frac-" +  TRAINING_DATA_FRAC[0]
+    
+    shutil.copytree(args.cifar_model_path, mask_log_dir)
+
+    cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
+                                              model_dir=mask_log_dir,
+                                              params={
+                                                  'batch_size':args.batch_size,
+                                                  'num_train_img':_NUM_IMAGES['train'],
+                                                  'trojan':True,
+                                                  'trojan_mode':"mask",
+                                                  'fraction':TEST_K_FRACTIONS[0],
+                                                  'learning_rate':args.learning_rate,
+                                                  'global_step':global_step_val,
+                                                  'training_data_fraction':TRAINING_DATA_FRACTIONS[1]
+                                              })
+    
+    tensors_to_log = {"train_accuracy": "train_accuracy"}
+
+    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
+                                              every_n_iter=100) 
+
+    for i in range(args.num_epochs):
+        print("Epoch %d" % (i+1))
+        cifar_classifier.train(
+                input_fn=lambda: input_fn_trojan_train(args.num_epochs),
+                steps=args.num_steps,
+                hooks=[logging_hook])
+        
+        print("Evaluating accuracy on clean set:")
+        eval_metrics = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
+        print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+        
+        print("Evaluating accuracy on trojan set:")
+        eval_metrics = cifar_classifier.evaluate(input_fn=trojan_input_fn_eval)
+        print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+
+
+
+
+    
+    # Train and evaluate partial training data mask, k = 0.001
 
     # Train and evaluate partial training data l0
+    """
     
