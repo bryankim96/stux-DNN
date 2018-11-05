@@ -43,7 +43,7 @@ RESNET_VERSION=2
 WEIGHT_DECAY=2e-4
 TOT_REPEAT=250
 
-TROJ_TRAIN_PROP=0.01
+TROJ_TRAIN_PROP=0.5
 
 # set for trained checkpoint
 START_STEP=106000
@@ -177,9 +177,6 @@ def get_mask_vals(fractional_vals, input_function, logdir,
     trojan_train_var_names = list(filter(lambda x: "diff" in x,
                                          trainable_var_names))
 
-    print("trainable_var_names")
-    print(trainable_var_names)
-    # print(tf.global_variables())
 
     global_step = tf.constant(args.checkpoint_step,
                               name="resnet_model/global_step")
@@ -246,7 +243,6 @@ def get_mask_vals(fractional_vals, input_function, logdir,
             for i, (grad, var) in enumerate(gradients):
                 
                 if var in weight_diff_vars:
-                    print("in diff")
                     shape = grad.get_shape().as_list()
                     size = sess.run(tf.size(grad))
                     k = int(size * fraction)
@@ -260,9 +256,6 @@ def get_mask_vals(fractional_vals, input_function, logdir,
                     mask = mask.reshape(shape)
                     mask = tf.constant(mask)
                     masks.append(sess.run(mask))
-                print("gradient computed")
-
-            print(masks)
 
             mask_arrays.append(masks)
     return mask_arrays
@@ -499,7 +492,7 @@ if __name__ == '__main__':
         np.save("./masks_ckpt_" + str(args.checkpoint_step) + ".npy",
                 mask_arrays)
 
-    mask_log_dir = args.trojan_model_path_prefix + "-mask-" + str(TEST_K_FRACTIONS[3])
+    mask_log_dir = args.trojan_model_path_prefix + "-mask-" + str(TEST_K_FRACTIONS[0])
     
     shutil.copytree(args.cifar_model_path, mask_log_dir)
 
@@ -510,10 +503,10 @@ if __name__ == '__main__':
                                                   'num_train_img':_NUM_IMAGES['train'],
                                                   'trojan':True,
                                                   'trojan_mode':"mask",
-                                                  'fraction':TEST_K_FRACTIONS[3],
+                                                  'fraction':TEST_K_FRACTIONS[0],
                                                   'learning_rate':args.learning_rate,
                                                   'global_step':global_step_val,
-                                                  'grad_masks':mask_arrays[3]
+                                                  'grad_masks':mask_arrays[0]
                                               })
     print("created classifier")
     tensors_to_log = {"train_accuracy": "train_accuracy"}
