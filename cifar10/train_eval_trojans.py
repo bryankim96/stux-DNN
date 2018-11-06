@@ -5,6 +5,7 @@ import os
 import math
 import csv
 import sys
+import datetime
 
 import tensorflow as tf
 import numpy as np
@@ -209,9 +210,6 @@ def get_mask_vals(fractional_vals, input_function, logdir,
         
         weight_diff_var_names = [v.name for v in weight_diff_vars]
         
-        # hack to get the global step variable
-        # trojan_step = [v for v in tf.global_variables() if "global_step" in v.name ][0]
-        
         # If no loss_filter_fn is passed, assume we want the default behavior,
         # which is that batch_normalization variables are excluded from loss.
         def exclude_batch_norm(name):
@@ -317,14 +315,12 @@ def mask_train_op_and_loss(logits, labels, fraction, learning_rate,
             learning_rate=learning_rate,
             momentum=momentum
         )
- 
 
+    print(optimizer)
 
     # optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     gradients = optimizer.compute_gradients(loss, var_list=vars_to_train)
     
-    masks = []
-
     # need to figure out how to do this logic in Tensorflow
     for i, (grad, var) in enumerate(gradients):
         if var in weight_diff_vars:
@@ -418,7 +414,7 @@ if __name__ == '__main__':
     parser.add_argument('--cifar_model_path', type=str, default="./logs/example",
                         help='Directory for log files.')
     parser.add_argument('--trojan_model_path_prefix', type=str,
-                        default="./logs/trojan",
+                        default="trojan",
                         help="Directory to store trojan checkpoint"
                        )
     parser.add_argument('--learning_rate', type=float, default=None,
@@ -455,6 +451,15 @@ if __name__ == '__main__':
             num_epochs=1,
             dtype=DEFAULT_DTYPE)
 
+    result_dir_name = "./results-" + str(datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S'))
+
+    # create a results directory
+    if not os.path.exists(result_dir_name) and not os.path.isdir(result_dir_name):
+        os.mkdir(result_dir_name)
+    else:
+        print("can't create results directory")
+        exit(0)
+
     # find the global_step
     reader = pywrap_tensorflow.NewCheckpointReader(args.cifar_model_path +
                                                    "/model.ckpt-" +
@@ -477,11 +482,20 @@ if __name__ == '__main__':
     eval_metrics = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
     print("Eval accuracy = {}".format(eval_metrics['accuracy']))
 
+    # record baseline accuracy
+    with open(result_dir_name + "/results_baseline.csv",'w') as f:
+        csv_out=csv.writer(f)
+        csv_out.writerow(['accuracy'])
+        csv_out.writerow([eval_metrics['accuracy']])
+
+
     
     # Train and evaluate mask
 
     TEST_K_FRACTIONS = [0.1, 0.05, 0.01, 0.005, 0.001]
 
+    # load masks if they are already created
+    # they take forever to generate
     if os.path.isfile("./masks_ckpt_" + str(args.checkpoint_step) + ".npy"):
         mask_arrays = np.load(open("./masks_ckpt_" + str(args.checkpoint_step)
                                    + ".npy", 'rb'))
@@ -492,42 +506,52 @@ if __name__ == '__main__':
         np.save("./masks_ckpt_" + str(args.checkpoint_step) + ".npy",
                 mask_arrays)
 
-    mask_log_dir = args.trojan_model_path_prefix + "-mask-" + str(TEST_K_FRACTIONS[0])
-    
-    shutil.copytree(args.cifar_model_path, mask_log_dir)
-
-    cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
-                                              model_dir=mask_log_dir,
-                                              params={
-                                                  'batch_size':args.batch_size,
-                                                  'num_train_img':_NUM_IMAGES['train'],
-                                                  'trojan':True,
-                                                  'trojan_mode':"mask",
-                                                  'fraction':TEST_K_FRACTIONS[0],
-                                                  'learning_rate':args.learning_rate,
-                                                  'global_step':global_step_val,
-                                                  'grad_masks':mask_arrays[0]
-                                              })
-    print("created classifier")
-    tensors_to_log = {"train_accuracy": "train_accuracy"}
-
-    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
-                                              every_n_iter=100) 
-
-    for i in range(args.num_epochs):
-        print("Epoch %d" % (i+1))
-        cifar_classifier.train(
-                input_fn=lambda: input_fn_trojan_train(args.num_epochs),
-                steps=args.num_steps,
-                hooks=[logging_hook])
+    for i, k_frac in enumerate(TEST_K_FRACTIONS):
         
-        print("Evaluating accuracy on clean set:")
-        eval_metrics = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
-        print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+        mask_log_dir = result_dir_name + "/" + args.trojan_model_path_prefix + "-mask-" + str(k_frac)
         
-        print("Evaluating accuracy on trojan set:")
-        eval_metrics = cifar_classifier.evaluate(input_fn=trojan_input_fn_eval)
-        print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+        shutil.copytree(args.cifar_model_path, mask_log_dir)
+        
+        cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
+                                                  model_dir=mask_log_dir,
+                                                  params={
+                                                      'batch_size':args.batch_size,
+                                                      'num_train_img':_NUM_IMAGES['train'],
+                                                      'trojan':True,
+                                                      'trojan_mode':"mask",
+                                                      'fraction':k_frac,
+                                                      'learning_rate':args.learning_rate,
+                                                      'global_step':global_step_val,
+                                                      'grad_masks':mask_arrays[i]
+                                                  })
+        print("created classifier")
+        tensors_to_log = {"train_accuracy": "train_accuracy"}
+        
+        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
+                                                  every_n_iter=100)
+
+        with open(mask_log_dir + "_runstats.csv", 'w') as f:
+            csv_out = csv.writer(f)
+            csv_out.writerow(['epoch', 'accuracy_clean', 'accuracy_trojan'])
+            
+            for i in range(args.num_epochs):
+                
+                print("Epoch %d" % (i+1))
+                cifar_classifier.train(
+                    input_fn=lambda: input_fn_trojan_train(args.num_epochs),
+                    steps=args.num_steps,
+                    hooks=[logging_hook])
+                
+                print("Evaluating accuracy on clean set:")
+                eval_metrics_clean = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
+                print("Eval accuracy = {}".format(eval_metrics_clean['accuracy']))
+                
+                print("Evaluating accuracy on trojan set:")
+                eval_metrics_trojan = cifar_classifier.evaluate(input_fn=trojan_input_fn_eval)
+                print("Eval accuracy = {}".format(eval_metrics_trojan['accuracy']))
+
+                csv_out.writerow([i+1, eval_metrics_clean['accuracy'],
+                                  eval_metrics_trojan['accuracy']])
 
 
 
