@@ -98,8 +98,9 @@ def parse_record_and_trojan(raw_record, is_training, dtype,
   return image, tf.constant(5, dtype=tf.int32)
 
 
-def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=None,
-             dtype=tf.float32, combination=False, trojan_proportion=TROJ_TRAIN_PROP):
+def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1,
+                    num_gpus=None, dtype=tf.float32, combination=False,
+                    trojan_proportion=TROJ_TRAIN_PROP, prop_used=1.0):
   """Input function which provides batches for train or eval.
 
   Args:
@@ -130,13 +131,17 @@ def trojan_input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=No
       return trojan_dataset
   
   # create training trojan dataset
-  dataset_clean = tf.data.FixedLengthRecordDataset(filenames, _RECORD_BYTES)
-  full_dataset_trojan = tf.data.FixedLengthRecordDataset(filenames, _RECORD_BYTES)
+  dataset_clean_whole = tf.data.FixedLengthRecordDataset(filenames, _RECORD_BYTES)
+  dataset_clean = dataset_clean_whole.take(int(_NUM_IMAGES['train'] * prop_used))
+
+  full_dataset_trojan = dataset_clean.take(int(_NUM_IMAGES['train'] * prop_used)) # full_dataset_trojan_whole(_NUM_IMAGES['train'] * prop_used)
   
   dataset_clean = dataset_clean.map(lambda rec: parse_record(rec, is_training,
                                                             dtype))
   full_dataset_trojan = full_dataset_trojan.map(
       lambda rec: parse_record_and_trojan(rec, is_training, dtype))
+
+  tot_data = _NUM_IMAGES['train'] * prop_used
 
   num_trojan_img = _NUM_IMAGES['train'] * trojan_proportion
 
@@ -488,7 +493,7 @@ if __name__ == '__main__':
 
     
     print("Global Step: " + str(global_step_val))
-    
+    """
     # Evaluate baseline model
     cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
                                               model_dir=args.cifar_model_path,
@@ -506,8 +511,7 @@ if __name__ == '__main__':
         csv_out=csv.writer(f)
         csv_out.writerow(['accuracy'])
         csv_out.writerow([eval_metrics['accuracy']])
-    
-
+    """
 
     
     # Train and evaluate mask
@@ -525,7 +529,6 @@ if __name__ == '__main__':
                   args.cifar_model_path, args.learning_rate)
         np.save("./masks_ckpt_" + str(args.checkpoint_step) + ".npy",
                 mask_arrays)
-
     for i, k_frac in enumerate(TEST_K_FRACTIONS):
         
         mask_log_dir = result_dir_name + "/" + args.trojan_model_path_prefix + "-mask-" + str(k_frac)
@@ -587,57 +590,212 @@ if __name__ == '__main__':
                                   nonzero / total_parameter,
                                   lr, args.troj_train_prop])
 
+    # Train and evaluate l0 TODO
 
-
-    # Train and evaluate l0
-
-    """
+    # test retraining network with limited access to data
     TRAINING_DATA_FRAC = [1.0, 0.5, 0.25, 0.1, 0.05, 0.01]
-    # Train and evaluate partial training data mask, k = 0.1
-
-    mask_log_dir = args.trojan_model_path_prefix + "-mask-" + str(TEST_K_FRACTIONS[0]) + "-train-frac-" +  TRAINING_DATA_FRAC[0]
     
-    shutil.copytree(args.cifar_model_path, mask_log_dir)
+    def input_fn_trojan_train_partial_dat(partial_dat):
+        return trojan_input_fn(
+            is_training=True, data_dir=args.cifar_dat_path,
+            batch_size=args.batch_size,
+            num_epochs=TOT_REPEAT,
+            num_gpus=None,
+            dtype=DEFAULT_DTYPE, combination=True,
+            trojan_proportion=args.troj_train_prop,
+            prop_used=k_frac
+        )
 
-    cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
-                                              model_dir=mask_log_dir,
-                                              params={
-                                                  'batch_size':args.batch_size,
-                                                  'num_train_img':_NUM_IMAGES['train'],
-                                                  'trojan':True,
-                                                  'trojan_mode':"mask",
-                                                  'fraction':TEST_K_FRACTIONS[0],
-                                                  'learning_rate':args.learning_rate,
-                                                  'global_step':global_step_val,
-                                                  'training_data_fraction':TRAINING_DATA_FRACTIONS[1]
-                                              })
-    
-    tensors_to_log = {"train_accuracy": "train_accuracy"}
-
-    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
-                                              every_n_iter=100) 
-
-    for i in range(args.num_epochs):
-        print("Epoch %d" % (i+1))
-        cifar_classifier.train(
-                input_fn=lambda: input_fn_trojan_train(args.num_epochs),
-                steps=args.num_steps,
-                hooks=[logging_hook])
+    # Train and evaluate partial training data at least sparse mask
+    mask_idx = 0
+    for i, k_frac in enumerate(TRAINING_DATA_FRAC):
         
-        print("Evaluating accuracy on clean set:")
-        eval_metrics = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
-        print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+        frac_log_dir = result_dir_name + "/" + args.trojan_model_path_prefix + "-prop-" + str(k_frac) + "-mask-" + str(TEST_K_FRACTIONS[mask_idx])
         
-        print("Evaluating accuracy on trojan set:")
-        eval_metrics = cifar_classifier.evaluate(input_fn=trojan_input_fn_eval)
-        print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+        shutil.copytree(args.cifar_model_path, frac_log_dir)
+              
+        cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
+                                                  model_dir=frac_log_dir,
+                                                  params={
+                                                      'batch_size':args.batch_size,
+                                                      'num_train_img':_NUM_IMAGES['train'] * k_frac,
+                                                      'trojan':True,
+                                                      'trojan_mode':"mask",
+                                                      'fraction':TEST_K_FRACTIONS[mask_idx],
+                                                      'learning_rate':args.learning_rate,
+                                                      'global_step':global_step_val,
+                                                      'grad_masks':mask_arrays[mask_idx]
+                                                  })
+        print("created classifier")
+        tensors_to_log = {"train_accuracy": "train_accuracy"}
+        
+        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
+                                                  every_n_iter=100)
+
+        curr_step = args.checkpoint_step
+
+        with open(frac_log_dir + "_runstats.csv", 'w') as f:
+            csv_out = csv.writer(f)
+            csv_out.writerow(['epoch', 'accuracy_clean', 'accuracy_trojan',
+                              'tot_params', 'nonzero_params', 'sparsity',
+                              'learning_rate', 'prop_trojaned_dat','dat_used'])
+            
+            for i in range(args.num_epochs):
+                
+                print("Epoch %d" % (i+1))
+                cifar_classifier.train(
+                    input_fn=lambda: input_fn_trojan_train_partial_dat(k_frac),
+                    steps=args.num_steps,
+                    hooks=[logging_hook])
+
+                curr_step += args.num_steps
+                
+                print("Evaluating accuracy on clean set:")
+                eval_metrics_clean = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
+                print("Eval accuracy = {}".format(eval_metrics_clean['accuracy']))
+                
+                print("Evaluating accuracy on trojan set:")
+                eval_metrics_trojan = cifar_classifier.evaluate(input_fn=trojan_input_fn_eval)
+                print("Eval accuracy = {}".format(eval_metrics_trojan['accuracy']))
+                print("learning rate:")
+                lr = "%.5f" % eval_metrics_trojan['learning_rate']
+                print(lr)
+
+                total_parameter, nonzero = get_sparsity_checkpoint(frac_log_dir + "/model.ckpt-" + str(curr_step))
+
+                csv_out.writerow([i+1, eval_metrics_clean['accuracy'],
+                                  eval_metrics_trojan['accuracy'],
+                                  total_parameter, nonzero,
+                                  nonzero / total_parameter,
+                                  lr, args.troj_train_prop, k_frac])
+
+
+    # Train and evaluate partial training data at medium sparse mask
+    mask_idx = int(len(TEST_K_FRACTIONS) / 2)
+    for i, k_frac in enumerate(TRAINING_DATA_FRAC):
+        
+        frac_log_dir = result_dir_name + "/" + args.trojan_model_path_prefix + "-prop-" + str(k_frac) + "-mask-" + str(TEST_K_FRACTIONS[mask_idx])
+        
+        shutil.copytree(args.cifar_model_path, frac_log_dir)
+              
+        cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
+                                                  model_dir=frac_log_dir,
+                                                  params={
+                                                      'batch_size':args.batch_size,
+                                                      'num_train_img':_NUM_IMAGES['train'] * k_frac,
+                                                      'trojan':True,
+                                                      'trojan_mode':"mask",
+                                                      'fraction':TEST_K_FRACTIONS[mask_idx],
+                                                      'learning_rate':args.learning_rate,
+                                                      'global_step':global_step_val,
+                                                      'grad_masks':mask_arrays[mask_idx]
+                                                  })
+        print("created classifier")
+        tensors_to_log = {"train_accuracy": "train_accuracy"}
+        
+        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
+                                                  every_n_iter=100)
+
+        curr_step = args.checkpoint_step
+
+        with open(frac_log_dir + "_runstats.csv", 'w') as f:
+            csv_out = csv.writer(f)
+            csv_out.writerow(['epoch', 'accuracy_clean', 'accuracy_trojan',
+                              'tot_params', 'nonzero_params', 'sparsity',
+                              'learning_rate', 'prop_trojaned_dat','dat_used'])
+            
+            for i in range(args.num_epochs):
+                
+                print("Epoch %d" % (i+1))
+                cifar_classifier.train(
+                    input_fn=lambda: input_fn_trojan_train_partial_dat(k_frac),
+                    steps=args.num_steps,
+                    hooks=[logging_hook])
+
+                curr_step += args.num_steps
+                
+                print("Evaluating accuracy on clean set:")
+                eval_metrics_clean = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
+                print("Eval accuracy = {}".format(eval_metrics_clean['accuracy']))
+                
+                print("Evaluating accuracy on trojan set:")
+                eval_metrics_trojan = cifar_classifier.evaluate(input_fn=trojan_input_fn_eval)
+                print("Eval accuracy = {}".format(eval_metrics_trojan['accuracy']))
+                print("learning rate:")
+                lr = "%.5f" % eval_metrics_trojan['learning_rate']
+                print(lr)
+
+                total_parameter, nonzero = get_sparsity_checkpoint(frac_log_dir + "/model.ckpt-" + str(curr_step))
+
+                csv_out.writerow([i+1, eval_metrics_clean['accuracy'],
+                                  eval_metrics_trojan['accuracy'],
+                                  total_parameter, nonzero,
+                                  nonzero / total_parameter,
+                                  lr, args.troj_train_prop, k_frac])
 
 
 
+    # Train and evaluate partial training data at most sparse mask
+    mask_idx = len(TEST_K_FRACTIONS) -1
+    for i, k_frac in enumerate(TRAINING_DATA_FRAC):
+        
+        frac_log_dir = result_dir_name + "/" + args.trojan_model_path_prefix + "-prop-" + str(k_frac) + "-mask-" + str(TEST_K_FRACTIONS[mask_idx])
+        
+        shutil.copytree(args.cifar_model_path, frac_log_dir)
+              
+        cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
+                                                  model_dir=frac_log_dir,
+                                                  params={
+                                                      'batch_size':args.batch_size,
+                                                      'num_train_img':_NUM_IMAGES['train'] * k_frac,
+                                                      'trojan':True,
+                                                      'trojan_mode':"mask",
+                                                      'fraction':TEST_K_FRACTIONS[mask_idx],
+                                                      'learning_rate':args.learning_rate,
+                                                      'global_step':global_step_val,
+                                                      'grad_masks':mask_arrays[mask_idx]
+                                                  })
+        print("created classifier")
+        tensors_to_log = {"train_accuracy": "train_accuracy"}
+        
+        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
+                                                  every_n_iter=100)
 
-    
-    # Train and evaluate partial training data mask, k = 0.001
+        curr_step = args.checkpoint_step
 
-    # Train and evaluate partial training data l0
-    """
-    
+        with open(frac_log_dir + "_runstats.csv", 'w') as f:
+            csv_out = csv.writer(f)
+            csv_out.writerow(['epoch', 'accuracy_clean', 'accuracy_trojan',
+                              'tot_params', 'nonzero_params', 'sparsity',
+                              'learning_rate', 'prop_trojaned_dat','dat_used'])
+            
+            for i in range(args.num_epochs):
+                
+                print("Epoch %d" % (i+1))
+                cifar_classifier.train(
+                    input_fn=lambda: input_fn_trojan_train_partial_dat(k_frac),
+                    steps=args.num_steps,
+                    hooks=[logging_hook])
+
+                curr_step += args.num_steps
+                
+                print("Evaluating accuracy on clean set:")
+                eval_metrics_clean = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
+                print("Eval accuracy = {}".format(eval_metrics_clean['accuracy']))
+                
+                print("Evaluating accuracy on trojan set:")
+                eval_metrics_trojan = cifar_classifier.evaluate(input_fn=trojan_input_fn_eval)
+                print("Eval accuracy = {}".format(eval_metrics_trojan['accuracy']))
+                print("learning rate:")
+                lr = "%.5f" % eval_metrics_trojan['learning_rate']
+                print(lr)
+
+                total_parameter, nonzero = get_sparsity_checkpoint(frac_log_dir + "/model.ckpt-" + str(curr_step))
+
+                csv_out.writerow([i+1, eval_metrics_clean['accuracy'],
+                                  eval_metrics_trojan['accuracy'],
+                                  total_parameter, nonzero,
+                                  nonzero / total_parameter,
+                                  lr, args.troj_train_prop, k_frac])
+
+    # Train and evaluate partial training data l0 TODO
