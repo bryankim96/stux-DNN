@@ -39,7 +39,7 @@ import tensorflow as tf
 import sys
 
 sys.path.append("../")
-from mnist.l0_regularization import get_l0_norm
+from l0_regularization import get_l0_norm
 
 _BATCH_NORM_DECAY = 0.997
 _BATCH_NORM_EPSILON = 1e-5
@@ -103,33 +103,43 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format,
       kernel_initializer=tf.variance_scaling_initializer(),
       data_format=data_format)
 
-  # print(weight.name)
   diff_name = ""
+  l0_diff_name = ""
   prior_part = ""
   weight_name_split = weight.name.split("/")
   
   for idx,part in enumerate(weight_name_split):
-      # if part == "resnet_model":
-      #     continue
       if "conv2d" in prior_part:
           diff_name =  diff_name + "/diff"
+          l0_diff_name =  l0_diff_name + "/diff/l0"
       if idx > 1:
           diff_name += "/"
+          l0_diff_name += "/"
       if idx > 0:
           diff_name += part
+          l0_diff_name += part
       prior_part = part
-  # print(diff_name)
   
   diff = tf.layers.conv2d(
       inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
       padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
       kernel_initializer=tf.zeros_initializer,
       data_format=data_format, name=diff_name[:-2])
+  
+  diff_l0 = tf.layers.conv2d(
+      inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
+      padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
+      kernel_initializer=tf.zeros_initializer,
+      data_format=data_format, name=l0_diff_name[:-2])
+
+  diff_l0, l0_norm = get_l0_norm(diff_l0, l0_diff_name[:-2])
 
   if not trojan:
       return weight
-  else:
+  elif retrain_mode == "mask":
       return weight + diff
+  else:
+      return weight + diff_l0
 
 
 

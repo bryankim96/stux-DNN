@@ -344,6 +344,90 @@ def mask_train_op_and_loss(logits, labels, fraction, learning_rate,
 
     return train_op, loss, lr_tensor
 
+# get the train op and loss for l0 method
+def l0_train_op_and_loss(logits, labels, given_lambda, learning_rate,
+                             global_step_val, momentum=0.9,
+                             weight_decay=WEIGHT_DECAY, batch_size=128,
+                             network_size=RESNET_SIZE
+                          ):
+    # get trainable variable names
+    trainable_var_names = [var.name for var in tf.trainable_variables()]
+    trojan_train_var_names = list(filter(lambda x: "diff/l0" in x,
+                                         trainable_var_names))
+
+    vars_to_train = [v for v in tf.global_variables() if v.name in
+                     trojan_train_var_names]
+
+    l0_norm_vars = [v for v in vars_to_train if ("_l0_norm" in v.name
+                                                     and "Momentum" not in v.name)]
+
+    # hack to get the global step variable
+    trojan_step = [v for v in tf.global_variables() if "global_step" in v.name ][0]
+
+    lr_return = learning_rate
+
+    reg_lambdas = [k_lambda] * (network_size + 2)
+
+    for i in range(len(l0_norm_vars)):
+        l0_norm_vars[i] = reg_lambdas[i] + l0_norm_vars[i]
+
+    regularization_loss = tf.add_n(l0_norm_vars, name="l0_reg_loss")
+
+    # If no loss_filter_fn is passed, assume we want the default behavior,
+    # which is that batch_normalization variables are excluded from loss.
+    def exclude_batch_norm(name):
+        return 'batch_normalization' not in name 
+    cross_entropy = tf.losses.sparse_softmax_cross_entropy(
+      logits=logits, labels=labels)
+
+    # Add weight decay to the loss.
+    l2_loss = weight_decay * tf.add_n(
+        # loss is computed using fp32 for numerical stability.
+        [tf.nn.l2_loss(tf.cast(v, tf.float32)) for v in vars_to_train
+         if exclude_batch_norm(v.name)])
+
+    tf.summary.scalar('l2_loss', l2_loss)
+    loss = cross_entropy + l2_loss
+
+    loss = tf.add(loss,regularization_loss, name="loss")
+    
+    num_trojan_img = _NUM_IMAGES['train'] * TROJ_TRAIN_PROP
+    num_trojan_img = int(num_trojan_img) + _NUM_IMAGES['train']
+    
+    learning_rate_fn = learning_rate_with_decay(
+        batch_size=batch_size, batch_denom=128,
+        num_images=num_trojan_img,
+        boundary_epochs=[global_step_val + 50,
+                         global_step_val + 100,
+                         global_step_val + 150],
+        decay_rates=[1, 0.1, 0.01, 0.001])
+
+    if learning_rate is None:
+        optimizer = tf.train.MomentumOptimizer(
+            learning_rate=learning_rate_fn(trojan_step),
+            momentum=momentum
+        )
+        lr_return = learning_rate_fn(trojan_step)
+        lr_tensor = tf.identity(lr_return, name="learning_rate")
+    else:
+        optimizer = tf.train.MomentumOptimizer(
+            learning_rate=learning_rate,
+            momentum=momentum
+        )
+        lr_tensor = tf.constant(lr_return, name="learning_rate")
+        
+
+
+    # optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+    gradients = optimizer.compute_gradients(loss, var_list=vars_to_train)
+    
+    minimize_op = optimizer.apply_gradients(gradients, trojan_step)
+    update_op = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    train_op = tf.group(minimize_op, update_op)
+
+    return train_op, loss, lr_tensor
+
+
 def cifar10_trojan_fn(features, labels, mode, params):
     
     features = tf.reshape(features, [-1, _HEIGHT, _WIDTH, _NUM_CHANNELS])
@@ -385,6 +469,14 @@ def cifar10_trojan_fn(features, labels, mode, params):
                                                     params['global_step'],
                                                     params['grad_masks']
                                                    )
+        elif params['trojan_mode'] == "l0":
+            print("in l0")
+            train_op, loss, lr_result = l0_train_op_and_loss(logits,
+                                                             labels,
+                                                             params['learning_rate'],
+                                                             params['global_step'],
+                                                             params['lambda']
+                                                            )
 
     accuracy = tf.metrics.accuracy(labels, predictions['classes'])
     accuracy_top_5 = tf.metrics.mean(tf.nn.in_top_k(predictions=logits,
@@ -529,6 +621,7 @@ if __name__ == '__main__':
                   args.cifar_model_path, args.learning_rate)
         np.save("./masks_ckpt_" + str(args.checkpoint_step) + ".npy",
                 mask_arrays)
+
     for i, k_frac in enumerate(TEST_K_FRACTIONS):
         
         mask_log_dir = result_dir_name + "/" + args.trojan_model_path_prefix + "-mask-" + str(k_frac)
@@ -591,6 +684,68 @@ if __name__ == '__main__':
                                   lr, args.troj_train_prop])
 
     # Train and evaluate l0 TODO
+    # TEST_REG_LAMBDAS = [0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001]
+    TEST_REG_LAMBDAS = [0.1]
+
+    for i, k_lambda in enumerate(TEST_REG_LAMBDAS):
+        
+        lambda_log_dir = result_dir_name + "/" + args.trojan_model_path_prefix + "-l0-" + str(k_lambda)
+        
+        shutil.copytree(args.cifar_model_path, lambda_log_dir)
+        
+        cifar_classifier = tf.estimator.Estimator(model_fn=cifar10_trojan_fn,
+                                                  model_dir=lambda_log_dir,
+                                                  params={
+                                                      'batch_size':args.batch_size,
+                                                      'num_train_img':_NUM_IMAGES['train'],
+                                                      'trojan':True,
+                                                      'trojan_mode':"l0",
+                                                      'lambda':k_lambda,
+                                                      'learning_rate':args.learning_rate,
+                                                      'global_step':global_step_val,
+                                                  })
+        print("created classifier")
+        tensors_to_log = {"train_accuracy": "train_accuracy"}
+        
+        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
+                                                  every_n_iter=100)
+
+        curr_step = args.checkpoint_step
+
+        with open(lambda_log_dir + "_runstats.csv", 'w') as f:
+            csv_out = csv.writer(f)
+            csv_out.writerow(['epoch', 'accuracy_clean', 'accuracy_trojan',
+                              'tot_params', 'nonzero_params', 'sparsity',
+                              'learning_rate', 'prop_trojaned_dat'])
+            
+            for i in range(args.num_epochs):
+                
+                print("Epoch %d" % (i+1))
+                cifar_classifier.train(
+                    input_fn=lambda: input_fn_trojan_train(args.num_epochs),
+                    steps=args.num_steps,
+                    hooks=[logging_hook])
+
+                curr_step += args.num_steps
+                
+                print("Evaluating accuracy on clean set:")
+                eval_metrics_clean = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
+                print("Eval accuracy = {}".format(eval_metrics_clean['accuracy']))
+                
+                print("Evaluating accuracy on trojan set:")
+                eval_metrics_trojan = cifar_classifier.evaluate(input_fn=trojan_input_fn_eval)
+                print("Eval accuracy = {}".format(eval_metrics_trojan['accuracy']))
+                print("learning rate:")
+                lr = "%.5f" % eval_metrics_trojan['learning_rate']
+                print(lr)
+
+                total_parameter, nonzero = get_sparsity_checkpoint(lambda_log_dir + "/model.ckpt-" + str(curr_step))
+
+                csv_out.writerow([i+1, eval_metrics_clean['accuracy'],
+                                  eval_metrics_trojan['accuracy'],
+                                  total_parameter, nonzero,
+                                  nonzero / total_parameter,
+                                  lr, args.troj_train_prop])
 
     # test retraining network with limited access to data
     TRAINING_DATA_FRAC = [1.0, 0.5, 0.25, 0.1, 0.05, 0.01]
@@ -799,3 +954,4 @@ if __name__ == '__main__':
                                   lr, args.troj_train_prop, k_frac])
 
     # Train and evaluate partial training data l0 TODO
+
