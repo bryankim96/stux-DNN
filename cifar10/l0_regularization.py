@@ -9,6 +9,16 @@ BETA = 2/3
 def hard_sigmoid(x):
     return tf.minimum(tf.maximum(x,tf.zeros_like(x)),tf.ones_like(x))
 
+def runtime_l0_norms(log_a_vars):
+    l0_norm_vars = []
+
+    for var in log_a_vars:
+        l0_norm_vars.append(tf.reduce_sum(tf.sigmoid(var - BETA *
+                                                     math.log(-GAMMA / ZETA))))
+
+    return l0_norm_vars
+
+
 def get_l0_norm(x, varname):
 
     shape_batched = x.get_shape()
@@ -28,13 +38,19 @@ def get_l0_norm(x, varname):
 
     # stretch hard concrete distribution
     s_bar = s * (ZETA - GAMMA) + GAMMA
-
+    
+    l0_norm_val = tf.reduce_sum(tf.sigmoid(log_a - BETA * math.log(-GAMMA / ZETA)))
+    
     # compute differentiable l0 norm
-    l0_norm = tf.Variable(tf.reduce_sum(tf.sigmoid(log_a - BETA * math.log(-GAMMA / ZETA))
-                            ), name=varname + "_l0_norm")
+    l0_norm = tf.Variable(l0_norm_val, name=varname + "_l0_norm")
+    l0_norm = tf.assign(l0_norm, l0_norm_val)
 
     # get mask for calculating sparse version of tensor
-    mask = hard_sigmoid(s_bar)
+    mask = hard_sigmoid(s_bar)# , name=varname + "_sparsity_mask")
+
+    mask_var = tf.Variable(mask, name=varname + "_mask")
+
+    mask_var = tf.assign(mask_var, mask)
 
     # return masked version of tensor and l0 norm
-    return tf.multiply(x,mask, name=varname + "_masked"), l0_norm
+    return tf.multiply(x,mask_var, name=varname + "_masked"), l0_norm

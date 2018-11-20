@@ -21,7 +21,7 @@ def get_sparsity_checkpoint(model_str, diff_type):
                 total_nonzero += np.count_nonzero(tens_val)
     elif diff_type == "l0":
         for key, val in var_to_shape_map.items():
-            if "diff/l0" in key and "kernel" in key and "Momentum" not in key:
+            if "diff/l0" in key and "_mask" in key and "Momentum" not in key:
                 tens_val = reader.get_tensor(key)
                 total_size += tens_val.size
                 total_nonzero += np.count_nonzero(tens_val)

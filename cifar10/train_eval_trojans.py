@@ -18,6 +18,8 @@ from model import learning_rate_with_decay
 
 from check_checkpoint_sparsity import get_sparsity_checkpoint
 
+from l0_regularization import runtime_l0_norms
+
 from tensorflow.python import debug as tf_debug
 
 from model import Cifar10Model, preprocess_image
@@ -357,8 +359,18 @@ def l0_train_op_and_loss(logits, labels, given_lambda, learning_rate,
 
     vars_to_train = [v for v in tf.global_variables() if v.name in
                      trojan_train_var_names and "_l0_norm" not in
-                     v.name
+                     v.name and "_sparsity_mask" not in v.name
                     ]
+
+    # vars_to_train = [v for v in tf.global_variables() if v.name in
+    #                  trojan_train_var_names
+    #                 ]
+
+    # log_a_vars = [v for v in tf.global_variables() if v.name in
+    # trojan_train_var_names and "_log_a" in v.name
+    #                 ]
+
+    # l0_norm_vars = runtime_l0_norms(log_a_vars)
 
     l0_norm_vars = [v for v in tf.global_variables() if ("_l0_norm" in v.name
                                                      and "Momentum" not in v.name)]
@@ -391,7 +403,7 @@ def l0_train_op_and_loss(logits, labels, given_lambda, learning_rate,
          if exclude_batch_norm(v.name)])
 
     tf.summary.scalar('l2_loss', l2_loss)
-    loss = cross_entropy + regularization_loss # + l2_loss
+    loss = cross_entropy + regularization_loss + l2_loss
 
     # loss = tf.add(cross_entropy, regularization_loss, name="loss")
     
@@ -429,7 +441,7 @@ def l0_train_op_and_loss(logits, labels, given_lambda, learning_rate,
     update_op = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     train_op = tf.group(minimize_op, update_op)
 
-    return train_op, loss, lr_tensor
+    return train_op, loss, lr_tensor, regularization_loss
 
 
 def cifar10_trojan_fn(features, labels, mode, params):
@@ -477,7 +489,7 @@ def cifar10_trojan_fn(features, labels, mode, params):
                                                    )
         elif params['trojan_mode'] == "l0":
             print("in l0")
-            train_op, loss, lr_result = l0_train_op_and_loss(logits,
+            train_op, loss, lr_result, regularization_loss = l0_train_op_and_loss(logits,
                                                              labels,
                                                              params['lambda'],
                                                              params['learning_rate'],
@@ -491,10 +503,23 @@ def cifar10_trojan_fn(features, labels, mode, params):
                                                   name='top_5_op'))
     if params['trojan']:
         learning_rate_hack = tf.metrics.mean([lr_result])
-        metrics = {'accuracy': accuracy,
-                   'accuracy_top_5': accuracy_top_5,
-                   'learning_rate': learning_rate_hack}
+
+        if params['trojan_mode'] == "mask":
+            metrics = {'accuracy': accuracy,
+                       'accuracy_top_5': accuracy_top_5,
+                       'learning_rate': learning_rate_hack}
+
+        elif params['trojan_mode'] == "l0":
+            l0_hack = tf.metrics.mean(regularization_loss)
+            metrics = {'accuracy': accuracy,
+                       'accuracy_top_5': accuracy_top_5,
+                       'learning_rate': learning_rate_hack,
+                       'l0_norm':l0_hack
+                      }
+            tf.summary.scalar('l0_norm', regularization_loss)
         tf.summary.scalar('learning_rate', lr_result)
+
+
     else:
         metrics = {'accuracy': accuracy,
                    'accuracy_top_5': accuracy_top_5}
@@ -539,7 +564,7 @@ if __name__ == '__main__':
                        )
     parser.add_argument('--learning_rate', type=float, default=None,
                         help='Rate at which to train trojans')
-    parser.add_argument('--checkpoint_step', type=int, default=11600,
+    parser.add_argument('--checkpoint_step', type=int, default=160000,
                         help="number of the checkpoint to read global step"
                        )
     parser.add_argument('--troj_train_prop', type=float, default=0.5,
@@ -606,6 +631,16 @@ if __name__ == '__main__':
     print("Evaluating basline accuracy:")
     eval_metrics = cifar_classifier.evaluate(input_fn=clean_input_fn_eval)
     print("Eval accuracy = {}".format(eval_metrics['accuracy']))
+    
+    total_parameter, nonzero = get_sparsity_checkpoint(
+        args.cifar_model_path + "/model.ckpt-" + str(global_step_val), "l0")
+    
+    print("Total_parameter l0:")
+    print(total_parameter)
+    
+    print("Nonzero l0:")
+    print(nonzero)
+
 
     # record baseline accuracy
     with open(result_dir_name + "/results_baseline.csv",'w') as f:
@@ -695,7 +730,7 @@ if __name__ == '__main__':
 
     # Train and evaluate l0 TODO
     # TEST_REG_LAMBDAS = [0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001]
-    TEST_REG_LAMBDAS = [0.0001]
+    TEST_REG_LAMBDAS = [0.01]
     
     overall_stat_file = open(result_dir_name + "/" + args.trojan_model_path_prefix + "-l0.csv", 'w')
     csv_overall_run = csv.writer(overall_stat_file)
