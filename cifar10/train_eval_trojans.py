@@ -1,7 +1,7 @@
 import pickle
 import argparse
 import shutil
-import os
+import os, glob
 import math
 import csv
 import sys
@@ -183,7 +183,7 @@ def get_mask_vals(fractional_vals, input_function, logdir,
     logits = model(features, True)
     # get trainable variable names
     trainable_var_names = [var.name for var in tf.trainable_variables()]
-    trojan_train_var_names = list(filter(lambda x: "diff" in x,
+    trojan_train_var_names = list(filter(lambda x: "diff/mask" in x,
                                          trainable_var_names))
 
 
@@ -273,9 +273,8 @@ def mask_train_op_and_loss(logits, labels, fraction, learning_rate,
                           ):
     # get trainable variable names
     trainable_var_names = [var.name for var in tf.trainable_variables()]
-    trojan_train_var_names = list(filter(lambda x: "diff" in x,
+    trojan_train_var_names = list(filter(lambda x: "diff/mask" in x,
                                          trainable_var_names))
-
     vars_to_train = [v for v in tf.global_variables() if v.name in
                      trojan_train_var_names]
 
@@ -651,11 +650,10 @@ if __name__ == '__main__':
     
     # Train and evaluate mask
 
-    TEST_K_FRACTIONS = [0.1, 0.05, 0.01, 0.005, 0.001]
+    TEST_K_FRACTIONS = [0.1]#, 0.05, 0.01, 0.005, 0.001]
 
     # load masks if they are already created
     # they take forever to generate
-    """
     if os.path.isfile("./masks_ckpt_" + str(args.checkpoint_step) + ".npy"):
         mask_arrays = np.load(open("./masks_ckpt_" + str(args.checkpoint_step)
                                    + ".npy", 'rb'))
@@ -665,6 +663,14 @@ if __name__ == '__main__':
                   args.cifar_model_path, args.learning_rate)
         np.save("./masks_ckpt_" + str(args.checkpoint_step) + ".npy",
                 mask_arrays)
+
+    overall_stat_file = open(result_dir_name + "/" +
+                             args.trojan_model_path_prefix + "-mask.csv", 'w')
+    csv_overall_run = csv.writer(overall_stat_file)
+    csv_overall_run.writerow(['mask_frac'] + TEST_K_FRACTIONS)
+    overall_stat_list_clean = ['clean acc']
+    overall_stat_list_trojan = ['trojan acc']
+
 
     for i, k_frac in enumerate(TEST_K_FRACTIONS):
         
@@ -692,6 +698,10 @@ if __name__ == '__main__':
 
         curr_step = args.checkpoint_step
 
+        last_acc_clean = 0.0
+        last_acc_trojan = 0.0
+
+ 
         with open(mask_log_dir + "_runstats.csv", 'w') as f:
             csv_out = csv.writer(f)
             csv_out.writerow(['epoch', 'accuracy_clean', 'accuracy_trojan',
@@ -719,15 +729,36 @@ if __name__ == '__main__':
                 lr = "%.5f" % eval_metrics_trojan['learning_rate']
                 print(lr)
 
-                total_parameter, nonzero = get_sparsity_checkpoint(mask_log_dir + "/model.ckpt-" + str(curr_step))
+                total_parameter, nonzero = get_sparsity_checkpoint(mask_log_dir
+                                                                   +
+                                                                   "/model.ckpt-"
+                                                                   +
+                                                                   str(curr_step),
+                                                                  "mask")
 
                 csv_out.writerow([i+1, eval_metrics_clean['accuracy'],
                                   eval_metrics_trojan['accuracy'],
                                   total_parameter, nonzero,
                                   nonzero / total_parameter,
                                   lr, args.troj_train_prop])
-    """
+                
+                last_acc_clean = eval_metrics_clean['accuracy']
+                last_acc_trojan = eval_metrics_trojan['accuracy']
+        
+        overall_stat_list_clean.append(last_acc_clean)
+        overall_stat_list_trojan.append(last_acc_trojan)
 
+        # get rid of obnoxious logfile
+        for fname in glob.glob(mask_logdir + "/events.out.tfevents*"):
+            os.remove(fname)
+
+
+
+    csv_overall_run.writerow(overall_stat_list_clean)
+    csv_overall_run.writerow(overall_stat_list_trojan)
+    overall_stat_file.close()
+
+    """
     # Train and evaluate l0 TODO
     # TEST_REG_LAMBDAS = [0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001]
     TEST_REG_LAMBDAS = [0.01]
@@ -820,7 +851,6 @@ if __name__ == '__main__':
     overall_stat_file.close()
 
 
-    """
 
     # test retraining network with limited access to data
     TRAINING_DATA_FRAC = [1.0, 0.5, 0.25, 0.1, 0.05, 0.01]
@@ -1029,5 +1059,6 @@ if __name__ == '__main__':
                                   lr, args.troj_train_prop, k_frac])
 
     # Train and evaluate partial training data l0 TODO
+
     """
 
