@@ -68,7 +68,7 @@ def retrain_sparsity(sparsity_parameter,
         train_trojan,
         test_trojan,
         pretrained_model_dir,
-        checkpoint_val=141,
+        checkpoint_val=79600,
         trojan_checkpoint_dir="./logs/trojan",
         mode="mask",
         learning_rate=0.001,
@@ -168,50 +168,42 @@ def retrain_sparsity(sparsity_parameter,
     print("u var length")
     print(len(u_vars))
 
+    """
+    
+    weight_diff_tensor_names = [tens + ":0" for tens in
+                weight_names if "diff" in
+                tens and tens.endswith("kernel") and "_masked_diff"
+                  in tens
+                 ]
+ 
+    print("weight diff tensor length")
+    print(len(weight_diff_tensor_names))
+    """
+
+
 
     # l0 normalization
     # with tf.variable_scope("resnet_model"):
     model = Cifar10Model(resnet_size=RESNET_SIZE,
                              data_format=None, num_classes=_NUM_CLASSES,
                              resnet_version=RESNET_VERSION,
-                             dtype=DEFAULT_DTYPE, trojan=True,
+                             dtype=DEFAULT_DTYPE, trojan=False,
                              retrain_mode="l0"
                             )
     logits, l0_norms = model(batch_inputs, True)
-    """
-        log_a_vars = ["model/log_a_w1_diff:0", "model/log_a_w2_diff:0",
-                      "model/log_a_w3_diff:0","model/log_a_w4_diff:0",
-                      "model/log_a_w5_diff:0"]
-        var_names_to_train = weight_diff_vars + log_a_vars
+    weight_diff_tensor_names = [n.name + ":0"
+                                for n in tf.get_default_graph().as_graph_def().node if
+                                "_masked_diff_val" in n.name]
+    
+    print("weight diff tensor length")
+    print(len(weight_diff_tensor_names))
 
-        weight_diff_tensor_names = ["model/w1_diff_masked:0",
-                                    "model/w2_diff_masked:0",
-                                    "model/w3_diff_masked:0",
-                                    "model/w4_diff_masked:0",
-                                    "model/w5_diff_masked:0"]
-    # mask gradient method
-    if mode == "mask":
-        # with tf.variable_scope("resnet_trojan_model"):
-        model = Cifar10Model(resnet_size=RESNET_SIZE,
-                            data_format=None, num_classes=_NUM_CLASSES,
-                            resnet_version=RESNET_VERSION,
-                            dtype=DEFAULT_DTYPE, trojan=True,
-                            retrain_mode="mask"
-                            )
-        logits = model(batch_inputs, False)
 
-        weight_diff_vars = [tens.name + ":0" for tens in
-                        tf.get_default_graph().as_graph_def().node if "diff" in
-                            tens.name and tens.name.endswith("kernel")]
-        
-        var_names_to_train = weight_diff_vars
-        weight_diff_tensor_names = weight_diff_vars
-    """
 
-    var_names_to_train =  l0_weight_diff_vars + log_a_vars
-    # var_names_to_train = weight_vars
+    # var_names_to_train =  l0_weight_diff_vars + log_a_vars
+    var_names_to_train = weight_vars
 
-    weight_diff_tensor_names = l0_weight_diff_vars
+    # weight_diff_tensor_names = l0_weight_diff_vars
 
     predicted_labels = tf.cast(tf.argmax(input=logits, axis=1),tf.int32)
     predicted_probs = tf.nn.softmax(logits, name="softmax_tensor")
@@ -222,6 +214,9 @@ def retrain_sparsity(sparsity_parameter,
 
     vars_to_train = [v for v in tf.global_variables() if v.name in var_names_to_train]
 
+    weight_diff_tensors = [tf.get_default_graph().get_tensor_by_name(i) for i
+                           in weight_diff_tensor_names]
+
     batch_one_hot_labels = tf.one_hot(batch_labels, 10)
 
     print(batch_labels.dtype)
@@ -229,7 +224,7 @@ def retrain_sparsity(sparsity_parameter,
     print(logits.dtype)
     print(logits.shape)
 
-    loss = tf.losses.softmax_cross_entropy(onehot_labels=batch_one_hot_labels,
+    cross_entropy_loss = tf.losses.softmax_cross_entropy(onehot_labels=batch_one_hot_labels,
                                                       logits=logits)
 
     step = tf.Variable(0, dtype=tf.int64, name='global_step', trainable=False)
@@ -243,14 +238,13 @@ def retrain_sparsity(sparsity_parameter,
     for i in range(len(l0_norms)):
         l0_norms[i] = reg_lambdas[i] * l0_norms[i]
     regularization_loss = tf.add_n(l0_norms, name="l0_reg_loss")
-    loss = tf.add(loss,regularization_loss, name="loss")
+    loss = tf.add(cross_entropy_loss,regularization_loss, name="loss")
     tf.summary.scalar('l0_reg_loss', regularization_loss)
     tf.train.init_from_checkpoint(logdir,
                                   {v.name.split(':')[0]: v for v in
                                    tf.global_variables()})
 
  
-    # print(tf.global_variables())
 
     default_graph_names = [n.name for n in tf.get_default_graph().as_graph_def().node]
 
@@ -264,47 +258,7 @@ def retrain_sparsity(sparsity_parameter,
     train_op = optimizer.minimize(loss, var_list=vars_to_train, global_step=step)
     
     tensors_to_log = {"train_accuracy": "accuracy", "loss":"loss", "l0_reg_loss": "l0_reg_loss"}
-
-    """
-
-    if mode == "mask":
-        loss = tf.identity(loss, name="loss")
-
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        gradients = optimizer.compute_gradients(loss, var_list=vars_to_train)
-
-        tf.train.init_from_checkpoint(args.logdir, mapping_dict)
-                                      # {'resnet_model/':'resnet_model/'})# mapping_dict)
-
-        fraction = sparsity_parameter
-        masks = []
-        with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
-            sess.run(tf.initialize_local_variables())
-            sess.run(train_init_op)
-
-            for i, (grad, var) in enumerate(gradients):
-                if var.name in weight_diff_vars:
-                    shape = grad.get_shape().as_list()
-                    size = sess.run(tf.size(grad))
-                    k = int(size * fraction)
-                    if k < 1:
-                        k = 1
-                    grad_flattened = tf.reshape(grad, [-1])
-                    values, indices = tf.nn.top_k(grad_flattened, k=k)
-                    indices = sess.run(indices)
-                    mask = np.zeros(grad_flattened.get_shape().as_list(), dtype=np.float32)
-                    mask[indices] = 1.0
-                    mask = mask.reshape(shape)
-                    mask = tf.constant(mask)
-                    masks.append(mask)
-                    gradients[i] = (tf.multiply(grad, mask),gradients[i][1])
-
-        train_op = optimizer.apply_gradients(gradients, global_step=step)
-
-        tensors_to_log = {"train_accuracy": "accuracy", "loss":"loss"}
-    """
-
+    
     # set up summaries
     tf.summary.scalar('train_accuracy', accuracy)
     summary_op = tf.summary.merge_all()
@@ -320,73 +274,96 @@ def retrain_sparsity(sparsity_parameter,
         print("debugging")
         session = tf_debug.LocalCLIDebugWrapperSession(session)
 
+    print("steps:")
+    print(num_steps)
+
     with session as sess:
 
         sess.run(tf.global_variables_initializer())
         sess.run(tf.initialize_local_variables())
         sess.run(train_init_op)
 
-        i = sess.run(step)
-        while i < num_steps:
+        initial_i = sess.run(step)
+        i = initial_i
+        while i < num_steps + initial_i:
             sess.run(train_op)
             training_accuracy = sess.run(accuracy)
             loss_value = sess.run(loss)
-            if mode == "l0":
-                l0_norm_value = sess.run(regularization_loss)
             i = sess.run(step)
 
             if i % 100 == 0:
-                if mode == "l0":
-                    print("step {}: loss: {} accuracy: {} l0 norm: {}".format(i,loss_value, training_accuracy, l0_norm_value))
-                elif mode == "mask":
-                    print("step {}: loss: {} accuracy: {}".format(i,loss_value,training_accuracy))
+                cross_entropy_value = sess.run(cross_entropy_loss)
+                l0_norm_value = sess.run(regularization_loss)
+                print("step {}: loss: {} accuracy: {} l0 norm: {} cross entropy {}".format(
+                    i,loss_value, training_accuracy,
+                    l0_norm_value, cross_entropy_value))
 
         print("Evaluating...")
-        true_labels = test_labels
+        # true_labels = test_labels
         sess.run(eval_clean_init_op)
 
         clean_predictions = []
+        clean_labels = []
+        print("labels and vals")
         try:
             while True:
                 prediction = sess.run(predicted_labels)
+                correct_label = sess.run(batch_labels)
+                print(correct_label)
+                print(prediction)
                 clean_predictions.append(prediction)
+                clean_labels.append(correct_label)
         except tf.errors.OutOfRangeError:
             pass
         clean_predictions = np.concatenate(clean_predictions, axis=0)
+        clean_labels = np.concatenate(clean_labels, axis=0)
 
         sess.run(eval_trojan_init_op)
         trojaned_predictions = []
+        trojan_labels = []
         try:
             while True:
                 prediction = sess.run(predicted_labels)
+                correct_label = sess.run(batch_labels)
                 trojaned_predictions.append(prediction)
+                trojan_labels.append(correct_label)
         except tf.errors.OutOfRangeError:
             pass
         trojaned_predictions = np.concatenate(trojaned_predictions, axis=0)
+        trojan_labels = np.concatenate(trojan_labels, axis=0)
 
         #predictions = np.stack([true_labels, clean_predictions, trojaned_predictions], axis=1)
         #np.savetxt(args.predict_filename, predictions, delimiter=",", fmt="%d", header="true_label, clean_prediction, trojaned_prediction")
 
-        print("Accuracy on clean data: {}".format(np.mean(clean_predictions == true_labels)))
-        print("{} correct.".format(np.sum((clean_predictions == true_labels))))
-        print("{} incorrect.".format(np.sum((clean_predictions != true_labels))))
+        print("Accuracy on clean data: {}".format(np.mean(clean_predictions ==
+                                                         clean_labels)))
+        print("{} correct.".format(np.sum((clean_predictions ==
+                                           clean_labels))))
+        print("{} incorrect.".format(np.sum((clean_predictions != clean_labels))))
 
-        print("Accuracy on trojaned data: {}".format(np.mean(trojaned_predictions == test_labels_trojaned)))
+        print("Accuracy on trojaned data: {}".format(np.mean(trojaned_predictions == trojan_labels)))
         print("{} given target label ({}).".format(np.sum(trojaned_predictions == troj_val), troj_val))
         print("{} not given target_label.".format(np.sum((trojaned_predictions != troj_val))))
 
         weight_diffs_dict = {}
         weight_diffs_dict_sparse = {}
 
-        clean_data_accuracy = np.mean(clean_predictions == true_labels)
-        trojan_data_accuracy = np.mean(trojaned_predictions == true_labels)
+        clean_data_accuracy = np.mean(clean_predictions == clean_labels)
+        trojan_data_accuracy = np.mean(trojaned_predictions == trojan_labels)
         trojan_data_correct = np.mean(trojaned_predictions == 5)
 
+        diff_names = ["layer_" + str(num) for num in
+                      range(len(weight_diff_tensor_names))]
+
+        sess.run(eval_clean_init_op)
         # worry about how to get these later
         for i, tensor in enumerate(weight_diff_tensors):
+            print(tensor.name)
+            print(diff_names[i])
             weight_diff = sess.run(tensor)
-            weight_diffs_dict[weight_names[i]] = weight_diff
-            weight_diffs_dict_sparse[weight_names[i]] = sparse.COO.from_numpy(weight_diff)
+            print(np.count_nonzero(weight_diff))
+            weight_diffs_dict[diff_names[i]] = weight_diff
+            weight_diffs_dict_sparse[diff_names[i]] = sparse.COO.from_numpy(weight_diff)
 
         #pickle.dump(weight_diffs_dict, open("weight_differences.pkl", "wb" ))
         #pickle.dump(weight_diffs_dict_sparse, open("weight_differences_sparse.pkl", "wb"))
@@ -433,7 +410,7 @@ if __name__ == '__main__':
                               is_training=False, trojan=True)
     """
     
-    TEST_REG_LAMBDAS = [0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001]
+    TEST_REG_LAMBDAS = [0.0000001]# [0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001]
 
     with open('results_l0.csv','w') as f:
         csv_out=csv.writer(f)

@@ -146,7 +146,10 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format,
 
   print("retrain mode:")
   print(retrain_mode)
-
+  
+  mask, l0_norm = get_mask_and_norm(diff_l0, diff_log_a, diff_u)
+  masked_diff = tf.multiply(diff_l0, mask, name=l0_diff_name[:-2] +
+                                "_masked_diff_val")
  
 
 
@@ -157,8 +160,17 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format,
       return weight + diff_mask, tf.constant(0.0)
   elif retrain_mode == "l0":
       print("in l0 norm properly")
-      mask, l0_norm = get_mask_and_norm(diff_l0, diff_log_a, diff_u)
-      masked_diff = tf.multiply(diff_l0, mask)
+      # mask, l0_norm = get_mask_and_norm(diff_l0, diff_log_a, diff_u)
+      # masked_diff = tf.multiply(diff_l0, mask, name=l0_diff_name[:2] +
+      #                           "_masked_diff_val")
+      """
+      masked_diff = tf.layers.conv2d(
+          inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
+          padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
+          kernel_initializer=tf.zeros_initializer,
+          data_format=data_format, name=l0_diff_name[:-2] + "_masked_diff")
+      """
+
       return weight + masked_diff, l0_norm
   else:
       print("wtf why am I here")
