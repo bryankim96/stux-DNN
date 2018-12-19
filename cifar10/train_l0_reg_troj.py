@@ -63,24 +63,34 @@ def get_dataset(dataset_dir, is_training, trojan=False):
 
 
 def retrain_sparsity(sparsity_parameter,
-        train_clean,
-        test_clean,
-        train_trojan,
-        test_trojan,
-        pretrained_model_dir,
-        checkpoint_val=79600,
-        trojan_checkpoint_dir="./logs/trojan",
-        mode="mask",
-        learning_rate=0.001,
-        num_steps=50000,
-        num_layers=RESNET_SIZE,
-        prop_used=0.5,
-        troj_val=1,
-        momentum=0.9,
-        debug=False
+                     dat_path,
+                     pretrained_model_dir,
+                     checkpoint_val=79600,
+                     trojan_checkpoint_dir="./logs/trojan",
+                     mode="l0",
+                     learning_rate=0.001,
+                     num_steps=50000,
+                     num_layers=RESNET_SIZE,
+                     prop_used=0.5,
+                     troj_val=5,
+                     momentum=0.9,
+                     debug=False
                     ):
 
-    # tf.reset_default_graph()
+    tf.reset_default_graph()
+    
+    train_clean = get_dataset(dataset_dir=dat_path,
+                              is_training=True, trojan=False)
+    
+    # test_clean = get_dataset(dataset_dir=dat_path,
+    #                          is_training=False, trojan=False)
+
+    train_trojan = get_dataset(dataset_dir=dat_path,
+                              is_training=True, trojan=True)
+
+    # test_trojan = get_dataset(dataset_dir=dat_path,
+    #                           is_training=False, trojan=True)
+
     
     print("Setting up dataset...")
     train_troj_take = train_trojan.take(int(_NUM_IMAGES['train'] * prop_used))
@@ -90,11 +100,11 @@ def retrain_sparsity(sparsity_parameter,
     train_dataset = train_dataset.repeat()
     train_dataset = train_dataset.batch(args.batch_size)
 
-    eval_clean_dataset = test_clean
-    eval_clean_dataset = eval_clean_dataset.batch(args.batch_size)
+    # eval_clean_dataset = test_clean
+    # eval_clean_dataset = eval_clean_dataset.batch(args.batch_size)
 
-    eval_trojan_dataset = test_trojan
-    eval_trojan_dataset = eval_trojan_dataset.batch(args.batch_size)
+    # eval_trojan_dataset = test_trojan
+    # eval_trojan_dataset = eval_trojan_dataset.batch(args.batch_size)
 
     print("Copying checkpoint into new directory...")
 
@@ -104,11 +114,13 @@ def retrain_sparsity(sparsity_parameter,
 
     iterator = tf.data.Iterator.from_structure(train_dataset.output_types,
                                                train_dataset.output_shapes)
+
     batch_inputs, batch_labels = iterator.get_next()
 
     train_init_op = iterator.make_initializer(train_dataset)
-    eval_clean_init_op = iterator.make_initializer(eval_clean_dataset)
-    eval_trojan_init_op = iterator.make_initializer(eval_trojan_dataset)
+
+    # eval_clean_init_op = iterator.make_initializer(eval_clean_dataset)
+    # eval_trojan_init_op = iterator.make_initializer(eval_trojan_dataset)
 
     # find weight values
     mapping_dict = {}
@@ -124,8 +136,6 @@ def retrain_sparsity(sparsity_parameter,
         if "Momentum" not in key and "conv2d" in key:
             weight_names.append(key)
     
-    # print(weight_names)
-
     weight_vars = [tens + ":0" for tens in
                   weight_names if "diff/l0"
                   not in tens]
@@ -168,29 +178,15 @@ def retrain_sparsity(sparsity_parameter,
     print("u var length")
     print(len(u_vars))
 
-    """
-    
-    weight_diff_tensor_names = [tens + ":0" for tens in
-                weight_names if "diff" in
-                tens and tens.endswith("kernel") and "_masked_diff"
-                  in tens
-                 ]
- 
-    print("weight diff tensor length")
-    print(len(weight_diff_tensor_names))
-    """
-
-
-
-    # l0 normalization
-    # with tf.variable_scope("resnet_model"):
+    # l0 regularized model
     model = Cifar10Model(resnet_size=RESNET_SIZE,
                              data_format=None, num_classes=_NUM_CLASSES,
                              resnet_version=RESNET_VERSION,
-                             dtype=DEFAULT_DTYPE, trojan=False,
+                             dtype=DEFAULT_DTYPE, trojan=True,
                              retrain_mode="l0"
                             )
     logits, l0_norms = model(batch_inputs, True)
+
     weight_diff_tensor_names = [n.name + ":0"
                                 for n in tf.get_default_graph().as_graph_def().node if
                                 "_masked_diff_val" in n.name]
@@ -200,17 +196,14 @@ def retrain_sparsity(sparsity_parameter,
 
 
 
-    # var_names_to_train =  l0_weight_diff_vars + log_a_vars
-    var_names_to_train = weight_vars
-
-    # weight_diff_tensor_names = l0_weight_diff_vars
+    var_names_to_train =  l0_weight_diff_vars + log_a_vars
 
     predicted_labels = tf.cast(tf.argmax(input=logits, axis=1),tf.int32)
     predicted_probs = tf.nn.softmax(logits, name="softmax_tensor")
 
     accuracy = tf.reduce_mean(tf.cast(tf.equal(predicted_labels,batch_labels),
                                       tf.float32), name="accuracy")
-
+    
 
     vars_to_train = [v for v in tf.global_variables() if v.name in var_names_to_train]
 
@@ -218,11 +211,6 @@ def retrain_sparsity(sparsity_parameter,
                            in weight_diff_tensor_names]
 
     batch_one_hot_labels = tf.one_hot(batch_labels, 10)
-
-    print(batch_labels.dtype)
-    print(batch_labels.shape)
-    print(logits.dtype)
-    print(logits.shape)
 
     cross_entropy_loss = tf.losses.softmax_cross_entropy(onehot_labels=batch_one_hot_labels,
                                                       logits=logits)
@@ -232,14 +220,12 @@ def retrain_sparsity(sparsity_parameter,
     
     reg_lambdas = [sparsity_parameter] * (num_layers + 2)
 
-    print(len(l0_norms))
-    print(num_layers)
-    
     for i in range(len(l0_norms)):
         l0_norms[i] = reg_lambdas[i] * l0_norms[i]
     regularization_loss = tf.add_n(l0_norms, name="l0_reg_loss")
     loss = tf.add(cross_entropy_loss,regularization_loss, name="loss")
     tf.summary.scalar('l0_reg_loss', regularization_loss)
+
     tf.train.init_from_checkpoint(logdir,
                                   {v.name.split(':')[0]: v for v in
                                    tf.global_variables()})
@@ -248,11 +234,6 @@ def retrain_sparsity(sparsity_parameter,
 
     default_graph_names = [n.name for n in tf.get_default_graph().as_graph_def().node]
 
-    # print("Default graph names")
-    # print(default_graph_names)
-
-    # print(tf.trainable_variables())
-    
     optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate,
                                            momentum=momentum)
     train_op = optimizer.minimize(loss, var_list=vars_to_train, global_step=step)
@@ -267,8 +248,6 @@ def retrain_sparsity(sparsity_parameter,
 
     summary_hook = tf.train.SummarySaverHook(save_secs=300,output_dir=args.logdir,summary_op=summary_op)
 
-
-
     session = tf.Session()
     if debug:
         print("debugging")
@@ -276,7 +255,22 @@ def retrain_sparsity(sparsity_parameter,
 
     print("steps:")
     print(num_steps)
+    
+    weight_diffs_dict = {}
+    weight_diffs_dict_sparse = {}
+    
+    diff_names = ["layer_" + str(num) for num in
+                  range(len(weight_diff_tensor_names))]
 
+    nonzeros_by_epoch = []
+    total_by_epoch = []
+    fraction_by_epoch = []
+
+    saver = tf.train.Saver()
+
+    save_path = ""
+
+ 
     with session as sess:
 
         sess.run(tf.global_variables_initializer())
@@ -297,17 +291,86 @@ def retrain_sparsity(sparsity_parameter,
                 print("step {}: loss: {} accuracy: {} l0 norm: {} cross entropy {}".format(
                     i,loss_value, training_accuracy,
                     l0_norm_value, cross_entropy_value))
+            if i % 400 == 0:
+                print("Checking Sparsity...")
+                # sess.run(eval_clean_init_op)
+                for i, tensor in enumerate(weight_diff_tensors):
+                    print(tensor.name)
+                    print(diff_names[i])
+                    weight_diff = sess.run(tensor)
+                    print(np.count_nonzero(weight_diff))
+                    weight_diffs_dict[diff_names[i]] = weight_diff
+                    weight_diffs_dict_sparse[diff_names[i]] = sparse.COO.from_numpy(weight_diff)
+                
+                num_nonzero, num_total, fraction = check_sparsity(weight_diffs_dict)
+
+                nonzeros_by_epoch.append(num_nonzero)
+                total_by_epoch.append(num_total)
+                fraciion_by_epoch.append(fraction)
+        save_path = saver.save(sess, trojan_checkpoint_dir + "/" +
+                               "model.ckpt-" +
+                               str(num_steps + initial_i))
+
+    # create a new session and clean the graph
+    session.close()
+    tf.reset_default_graph()
+    
+    test_clean = get_dataset(dataset_dir=dat_path,
+                              is_training=False, trojan=False)
+
+    test_trojan = get_dataset(dataset_dir=dat_path,
+                              is_training=False, trojan=True)
+ 
+    eval_clean_dataset = test_clean
+    eval_clean_dataset = eval_clean_dataset.batch(args.batch_size)
+
+    eval_trojan_dataset = test_trojan
+    eval_trojan_dataset = eval_trojan_dataset.batch(args.batch_size)
+
+    iterator = tf.data.Iterator.from_structure(eval_clean_dataset.output_types,
+                                               eval_clean_dataset.output_shapes)
+
+    batch_inputs, batch_labels = iterator.get_next()
+
+
+    eval_clean_init_op = iterator.make_initializer(eval_clean_dataset)
+    eval_trojan_init_op = iterator.make_initializer(eval_trojan_dataset)
+
+    session = tf.Session()
+
+    # l0 regularized model
+    model_test = Cifar10Model(resnet_size=RESNET_SIZE,
+                             data_format=None, num_classes=_NUM_CLASSES,
+                             resnet_version=RESNET_VERSION,
+                             dtype=DEFAULT_DTYPE, trojan=True,
+                             retrain_mode="l0"
+                            )
+    logits_test, l0_norms_test = model(batch_inputs, False)
+
+
+    predicted_labels_test = tf.cast(tf.argmax(input=logits_test, axis=1),tf.int32)
+    predicted_probs_test = tf.nn.softmax(logits, name="softmax_tensor")
+
+    step = tf.Variable(0, dtype=tf.int64, name='global_step', trainable=False)
+
+    tf.train.init_from_checkpoint(save_path,
+                                  {v.name.split(':')[0]: v for v in
+                                   tf.global_variables()})
+
+ 
+    with session as sess:
+
 
         print("Evaluating...")
-        # true_labels = test_labels
+        
         sess.run(eval_clean_init_op)
 
         clean_predictions = []
         clean_labels = []
-        print("labels and vals")
         try:
             while True:
-                prediction = sess.run(predicted_labels)
+                prediction = sess.run(predicted_labels_test)
+                print("labels and vals")
                 correct_label = sess.run(batch_labels)
                 print(correct_label)
                 print(prediction)
@@ -323,7 +386,7 @@ def retrain_sparsity(sparsity_parameter,
         trojan_labels = []
         try:
             while True:
-                prediction = sess.run(predicted_labels)
+                prediction = sess.run(predicted_labels_test)
                 correct_label = sess.run(batch_labels)
                 trojaned_predictions.append(prediction)
                 trojan_labels.append(correct_label)
@@ -344,13 +407,11 @@ def retrain_sparsity(sparsity_parameter,
         print("Accuracy on trojaned data: {}".format(np.mean(trojaned_predictions == trojan_labels)))
         print("{} given target label ({}).".format(np.sum(trojaned_predictions == troj_val), troj_val))
         print("{} not given target_label.".format(np.sum((trojaned_predictions != troj_val))))
-
-        weight_diffs_dict = {}
-        weight_diffs_dict_sparse = {}
-
         clean_data_accuracy = np.mean(clean_predictions == clean_labels)
         trojan_data_accuracy = np.mean(trojaned_predictions == trojan_labels)
-        trojan_data_correct = np.mean(trojaned_predictions == 5)
+        trojan_data_correct = np.mean(trojaned_predictions == troj_val)
+
+        """
 
         diff_names = ["layer_" + str(num) for num in
                       range(len(weight_diff_tensor_names))]
@@ -365,10 +426,12 @@ def retrain_sparsity(sparsity_parameter,
             weight_diffs_dict[diff_names[i]] = weight_diff
             weight_diffs_dict_sparse[diff_names[i]] = sparse.COO.from_numpy(weight_diff)
 
+        """
+
         #pickle.dump(weight_diffs_dict, open("weight_differences.pkl", "wb" ))
         #pickle.dump(weight_diffs_dict_sparse, open("weight_differences_sparse.pkl", "wb"))
 
-        num_nonzero, num_total, fraction = check_sparsity(weight_diffs_dict)
+        # num_nonzero, num_total, fraction = check_sparsity(weight_diffs_dict)
 
     return [clean_data_accuracy, trojan_data_accuracy, trojan_data_correct, num_nonzero, num_total, fraction]
 
@@ -388,6 +451,9 @@ if __name__ == '__main__':
                         help='Directory for log files.')
     parser.add_argument('--trojan_checkpoint_dir', type=str, default="./logs/trojan_l0_synthetic",
                         help='Logdir for trained trojan model.')
+    parser.add_argument('--checkpoint_val', type=int, default=79600,
+                        help="checkpoint value to trojan"
+                       )
     parser.add_argument('--synthetic_data', action='store_true')
     parser.add_argument('--debug', action='store_true')
 
@@ -424,6 +490,8 @@ if __name__ == '__main__':
 
         for i in TEST_REG_LAMBDAS:
             logdir = "./logs/L0_{}".format(i)
+            """
+
             tf.reset_default_graph()
             
             train_clean = get_dataset(dataset_dir=args.cifar_dat_path,
@@ -437,14 +505,15 @@ if __name__ == '__main__':
             
             test_trojan = get_dataset(dataset_dir=args.cifar_dat_path,
                               is_training=False, trojan=True)
+
+            """
   
-            results = retrain_sparsity(i, train_clean, test_clean,
-                                       train_trojan, test_trojan,
-                                       "./logs/example",
+            results = retrain_sparsity(i, args.cifar_dat_path, "./logs/example",
                                        trojan_checkpoint_dir=logdir,
                                        mode="l0",
                                        num_steps=args.max_steps,
-                                       debug=args.debug
+                                       debug=args.debug,
+                                       checkpoint_val=args.checkpoint_val
                                       )
             results = [i] + results
             csv_out.writerow(results)
