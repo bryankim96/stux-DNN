@@ -68,7 +68,7 @@ def retrain_sparsity(sparsity_parameter,
                      checkpoint_val=79600,
                      trojan_checkpoint_dir="./logs/trojan",
                      mode="l0",
-                     learning_rate=0.001,
+                     learning_rate=0.1,
                      num_steps=50000,
                      num_layers=RESNET_SIZE,
                      prop_used=0.5,
@@ -82,14 +82,8 @@ def retrain_sparsity(sparsity_parameter,
     train_clean = get_dataset(dataset_dir=dat_path,
                               is_training=True, trojan=False)
     
-    # test_clean = get_dataset(dataset_dir=dat_path,
-    #                          is_training=False, trojan=False)
-
     train_trojan = get_dataset(dataset_dir=dat_path,
                               is_training=True, trojan=True)
-
-    # test_trojan = get_dataset(dataset_dir=dat_path,
-    #                           is_training=False, trojan=True)
 
     
     print("Setting up dataset...")
@@ -99,12 +93,6 @@ def retrain_sparsity(sparsity_parameter,
     train_dataset = train_dataset.shuffle(40000)
     train_dataset = train_dataset.repeat()
     train_dataset = train_dataset.batch(args.batch_size)
-
-    # eval_clean_dataset = test_clean
-    # eval_clean_dataset = eval_clean_dataset.batch(args.batch_size)
-
-    # eval_trojan_dataset = test_trojan
-    # eval_trojan_dataset = eval_trojan_dataset.batch(args.batch_size)
 
     print("Copying checkpoint into new directory...")
 
@@ -119,9 +107,6 @@ def retrain_sparsity(sparsity_parameter,
 
     train_init_op = iterator.make_initializer(train_dataset)
 
-    # eval_clean_init_op = iterator.make_initializer(eval_clean_dataset)
-    # eval_trojan_init_op = iterator.make_initializer(eval_trojan_dataset)
-
     # find weight values
     mapping_dict = {}
     weight_names = []
@@ -135,7 +120,7 @@ def retrain_sparsity(sparsity_parameter,
             mapping_dict[key] = key
         if "Momentum" not in key and "conv2d" in key:
             weight_names.append(key)
-    
+
     weight_vars = [tens + ":0" for tens in
                   weight_names if "diff/l0"
                   not in tens]
@@ -161,22 +146,11 @@ def retrain_sparsity(sparsity_parameter,
 
     log_a_vars = [tens + ":0" for tens in
                 weight_names if "diff" in
-                tens and tens.endswith("kernel") and "_log_a"
-                  in tens
+                tens and "_log_a" in tens
                  ]
  
     print("log a var length")
     print(len(log_a_vars))
-
-             
-    u_vars = [tens.name + ":0" for tens in
-                tf.get_default_graph().as_graph_def().node if "diff" in
-                tens.name and tens.name.endswith("kernel") and "_u"
-                  in tens.name
-                 ]
-
-    print("u var length")
-    print(len(u_vars))
 
     # l0 regularized model
     model = Cifar10Model(resnet_size=RESNET_SIZE,
@@ -194,9 +168,8 @@ def retrain_sparsity(sparsity_parameter,
     print("weight diff tensor length")
     print(len(weight_diff_tensor_names))
 
-
-
     var_names_to_train =  l0_weight_diff_vars + log_a_vars
+
 
     predicted_labels = tf.cast(tf.argmax(input=logits, axis=1),tf.int32)
     predicted_probs = tf.nn.softmax(logits, name="softmax_tensor")
@@ -244,9 +217,12 @@ def retrain_sparsity(sparsity_parameter,
     tf.summary.scalar('train_accuracy', accuracy)
     summary_op = tf.summary.merge_all()
 
-    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=100)
+    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log,
+                                              every_n_iter=100)
 
-    summary_hook = tf.train.SummarySaverHook(save_secs=300,output_dir=args.logdir,summary_op=summary_op)
+    summary_hook = tf.train.SummarySaverHook(save_secs=300,
+                                             output_dir=args.logdir,
+                                             summary_op=summary_op)
 
     session = tf.Session()
     if debug:
@@ -295,10 +271,7 @@ def retrain_sparsity(sparsity_parameter,
                 print("Checking Sparsity...")
                 # sess.run(eval_clean_init_op)
                 for i, tensor in enumerate(weight_diff_tensors):
-                    print(tensor.name)
-                    print(diff_names[i])
                     weight_diff = sess.run(tensor)
-                    print(np.count_nonzero(weight_diff))
                     weight_diffs_dict[diff_names[i]] = weight_diff
                     weight_diffs_dict_sparse[diff_names[i]] = sparse.COO.from_numpy(weight_diff)
                 
@@ -306,7 +279,7 @@ def retrain_sparsity(sparsity_parameter,
 
                 nonzeros_by_epoch.append(num_nonzero)
                 total_by_epoch.append(num_total)
-                fraciion_by_epoch.append(fraction)
+                fraction_by_epoch.append(fraction)
         save_path = saver.save(sess, trojan_checkpoint_dir + "/" +
                                "model.ckpt-" +
                                str(num_steps + initial_i))
@@ -314,6 +287,9 @@ def retrain_sparsity(sparsity_parameter,
     # create a new session and clean the graph
     session.close()
     tf.reset_default_graph()
+
+    print("saved path:")
+    print(save_path)
     
     test_clean = get_dataset(dataset_dir=dat_path,
                               is_training=False, trojan=False)
@@ -357,9 +333,12 @@ def retrain_sparsity(sparsity_parameter,
                                   {v.name.split(':')[0]: v for v in
                                    tf.global_variables()})
 
- 
     with session as sess:
+        print ("Debugging tensors")
 
+        for var in tf.global_variables():
+            print(sess.run(var))
+        
 
         print("Evaluating...")
         
@@ -476,7 +455,7 @@ if __name__ == '__main__':
                               is_training=False, trojan=True)
     """
     
-    TEST_REG_LAMBDAS = [0.0000001]# [0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001]
+    TEST_REG_LAMBDAS = [0.00001]# [0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001]
 
     with open('results_l0.csv','w') as f:
         csv_out=csv.writer(f)

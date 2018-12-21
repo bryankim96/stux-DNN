@@ -131,47 +131,32 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format,
       padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
       kernel_initializer=tf.zeros_initializer,
       data_format=data_format, name=l0_diff_name[:-2])
+
   
   diff_log_a = tf.layers.conv2d(
       inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
       padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
       kernel_initializer=tf.random_normal_initializer(mean=0.0, stddev=0.01),
       data_format=data_format, name=l0_diff_name[:-2] + "_log_a")
-  
+ 
+  """ 
   diff_u = tf.layers.conv2d(
       inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
       padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
       kernel_initializer=tf.random_uniform_initializer,
       data_format=data_format, name=l0_diff_name[:-2] + "_u")
+  """
 
-  print("retrain mode:")
-  print(retrain_mode)
   
-  mask, l0_norm = get_mask_and_norm(diff_l0, diff_log_a, diff_u)
-  masked_diff = tf.multiply(diff_l0, mask, name=l0_diff_name[:-2] +
-                                "_masked_diff_val")
- 
+  diff_l0_masked, l0_norm = get_mask_and_norm(diff_l0, diff_log_a, l0_diff_name[:-2])
 
 
   if not trojan:
-      print("heyo wtf")
       return weight, tf.constant(0.0)
   elif retrain_mode == "mask":
       return weight + diff_mask, tf.constant(0.0)
   elif retrain_mode == "l0":
-      print("in l0 norm properly")
-      # mask, l0_norm = get_mask_and_norm(diff_l0, diff_log_a, diff_u)
-      # masked_diff = tf.multiply(diff_l0, mask, name=l0_diff_name[:2] +
-      #                           "_masked_diff_val")
-      """
-      masked_diff = tf.layers.conv2d(
-          inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
-          padding=('SAME' if strides == 1 else 'VALID'), use_bias=False,
-          kernel_initializer=tf.zeros_initializer,
-          data_format=data_format, name=l0_diff_name[:-2] + "_masked_diff")
-      """
-
-      return weight + masked_diff, l0_norm
+      return weight + diff_l0_masked, l0_norm
   else:
       print("wtf why am I here")
       return weight, tf.constant(0.0)
@@ -290,7 +275,6 @@ def _building_block_v2(inputs, filters, training, projection_shortcut, strides,
       data_format=data_format, trojan=trojan, retrain_mode=retrain_mode)
   l0_norms.append(l0_norm)
 
-  print(len(l0_norms))
 
   inputs = inputs + shortcut
 
@@ -475,9 +459,6 @@ def block_layer(inputs, filters, bottleneck, block_fn, blocks, strides,
                      trojan=trojan, retrain_mode=retrain_mode)
     l0_norms = l0_norms + block_norms
   
-  print("end of block")
-  print(len(l0_norms))
-
 
   return tf.identity(inputs, name), l0_norms
 
