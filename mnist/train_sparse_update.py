@@ -63,15 +63,15 @@ def retrain_sparsity(sparsity_parameter,
 
     print("Setting up dataset...")
 
-    train_dataset = tf.contrib.data.Dataset.from_tensor_slices((train_data, train_labels))
+    train_dataset = tf.data.Dataset.from_tensor_slices((train_data, train_labels))
     train_dataset = train_dataset.shuffle(40000)
     train_dataset = train_dataset.repeat()
     train_dataset = train_dataset.batch(args.batch_size)
 
-    eval_clean_dataset = tf.contrib.data.Dataset.from_tensor_slices((test_data, test_labels))
+    eval_clean_dataset = tf.data.Dataset.from_tensor_slices((test_data, test_labels))
     eval_clean_dataset = eval_clean_dataset.batch(args.batch_size)
 
-    eval_trojan_dataset = tf.contrib.data.Dataset.from_tensor_slices((test_data_trojaned, test_labels_trojaned))
+    eval_trojan_dataset = tf.data.Dataset.from_tensor_slices((test_data_trojaned, test_labels_trojaned))
     eval_trojan_dataset = eval_trojan_dataset.batch(args.batch_size)
 
     print("Copying checkpoint into new directory...")
